@@ -1,0 +1,31 @@
+package com.splitbill.adapters.input.rest;
+
+import com.splitbill.application.dto.MonthlyReportResponse;
+import com.splitbill.application.usecase.MonthlyReportUseCase;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.UUID;
+
+@RestController
+@RequestMapping("/reports")
+public class MonthlyReportController {
+
+    private final MonthlyReportUseCase reports;
+
+    public MonthlyReportController(MonthlyReportUseCase reports) {
+        this.reports = reports;
+    }
+
+    @GetMapping("/months/{monthId}")
+    public MonthlyReportResponse getMonthlyReport(@PathVariable UUID monthId) {
+        return reports.getByMonth(monthId);
+    }
+
+    @GetMapping("/events/{eventId}")
+    public MonthlyReportResponse getEventReport(@PathVariable UUID eventId) {
+        return reports.getByEvent(eventId);
+    }
+}
