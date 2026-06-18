@@ -9,6 +9,7 @@ public record CreateUserRequest(
         @Email @NotBlank String email,
         @NotBlank String phone,
         @NotBlank String pixKey,
+        @NotBlank String password,
         boolean admin
 ) {
 }

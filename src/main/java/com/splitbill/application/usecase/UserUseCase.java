@@ -35,6 +35,11 @@ public class UserUseCase {
 
     @Transactional
     public UserResponse create(CreateUserRequest request) {
+        return create(request, false);
+    }
+
+    @Transactional
+    public UserResponse create(CreateUserRequest request, boolean allowAdminFlag) {
         if (users.existsByEmailIgnoreCase(request.email())) {
             throw new DomainException("Email already registered");
         }
@@ -47,13 +52,20 @@ public class UserUseCase {
         user.setEmail(request.email().toLowerCase());
         user.setPhone(request.phone());
         user.setPixKey(request.pixKey());
-        user.setPasswordHash(passwordEncoder.encode("ChangeMe123!"));
-        user.setAdmin(request.admin());
+        user.setPasswordHash(passwordEncoder.encode(request.password()));
+        user.setAdmin(resolveAdminFlag(request.admin(), allowAdminFlag));
         user.setActive(true);
         user.setCreatedAt(now);
         user.setUpdatedAt(now);
 
         return toResponse(users.save(user));
+    }
+
+    private boolean resolveAdminFlag(boolean requestedAdmin, boolean allowAdminFlag) {
+        if (users.countByDeletedAtIsNull() == 0) {
+            return true;
+        }
+        return allowAdminFlag && requestedAdmin;
     }
 
     @Transactional
