@@ -69,7 +69,10 @@ public class UserUseCase {
     }
 
     @Transactional
-    public UserResponse update(UUID id, UpdateUserRequest request) {
+    public UserResponse update(UUID id, UpdateUserRequest request, UUID requesterId, boolean requesterIsAdmin) {
+        if (!requesterIsAdmin && !id.equals(requesterId)) {
+            throw new DomainException("Users can only update their own profile");
+        }
         UserJpaEntity user = users.findById(id)
                 .orElseThrow(() -> new DomainException("User not found"));
         if (user.getDeletedAt() != null) {
@@ -83,6 +86,9 @@ public class UserUseCase {
                 .ifPresent(existing -> {
                     throw new DomainException("Email already registered");
                 });
+        if (!requesterIsAdmin && (request.admin() != user.isAdmin() || request.active() != user.isActive())) {
+            throw new DomainException("Users cannot change their access settings");
+        }
         if (user.isAdmin() && !request.admin() && users.countByAdminTrueAndActiveTrueAndDeletedAtIsNull() <= 1) {
             throw new DomainException("Cannot remove admin role from the last active admin");
         }
@@ -102,7 +108,10 @@ public class UserUseCase {
     }
 
     @Transactional
-    public void delete(UUID id) {
+    public void delete(UUID id, boolean requesterIsAdmin) {
+        if (!requesterIsAdmin) {
+            throw new DomainException("Only admins can delete users");
+        }
         UserJpaEntity user = users.findById(id)
                 .orElseThrow(() -> new DomainException("User not found"));
         if (user.getDeletedAt() != null) {

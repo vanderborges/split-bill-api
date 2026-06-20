@@ -52,12 +52,21 @@ public class UserController {
 
     @PutMapping("/{id}")
     public UserResponse update(@PathVariable UUID id, @Valid @RequestBody UpdateUserRequest request) {
-        return users.update(id, request);
+        return users.update(id, request, currentUserId(), isAdmin());
     }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
-        users.delete(id);
+        users.delete(id, isAdmin());
         return ResponseEntity.noContent().build();
+    }
+
+    private UUID currentUserId() {
+        return (UUID) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+    }
+
+    private boolean isAdmin() {
+        return SecurityContextHolder.getContext().getAuthentication().getAuthorities().stream()
+                .anyMatch(authority -> "ROLE_ADMIN".equals(authority.getAuthority()));
     }
 }
