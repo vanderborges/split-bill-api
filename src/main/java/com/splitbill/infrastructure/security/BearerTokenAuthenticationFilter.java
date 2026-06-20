@@ -7,6 +7,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -42,10 +43,30 @@ public class BearerTokenAuthenticationFilter extends OncePerRequestFilter {
                         new UsernamePasswordAuthenticationToken(user.getId(), null, authorities)
                 );
             } catch (DomainException | IllegalArgumentException exception) {
+                SecurityContextHolder.clearContext();
+                if (isPublicRequest(request)) {
+                    filterChain.doFilter(request, response);
+                    return;
+                }
                 response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid token");
                 return;
             }
         }
         filterChain.doFilter(request, response);
+    }
+
+    private boolean isPublicRequest(HttpServletRequest request) {
+        String method = request.getMethod();
+        String path = request.getServletPath();
+        return HttpMethod.OPTIONS.matches(method)
+                || isPost(method, path, "/auth/login")
+                || isPost(method, path, "/users")
+                || path.equals("/swagger-ui.html")
+                || path.startsWith("/swagger-ui/")
+                || path.startsWith("/v3/api-docs/");
+    }
+
+    private boolean isPost(String method, String path, String expectedPath) {
+        return HttpMethod.POST.matches(method) && expectedPath.equals(path);
     }
 }
