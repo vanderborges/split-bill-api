@@ -5,6 +5,7 @@ import com.splitbill.application.dto.CreateGroupRequest;
 import com.splitbill.application.dto.GroupMemberResponse;
 import com.splitbill.application.dto.GroupResponse;
 import com.splitbill.application.usecase.GroupUseCase;
+import com.splitbill.infrastructure.security.CurrentUser;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -25,28 +26,29 @@ import java.util.UUID;
 public class GroupController {
 
     private final GroupUseCase groups;
+    private final CurrentUser currentUser;
 
-    public GroupController(GroupUseCase groups) {
+    public GroupController(GroupUseCase groups, CurrentUser currentUser) {
         this.groups = groups;
+        this.currentUser = currentUser;
     }
 
     @GetMapping
-    public List<GroupResponse> list(@RequestParam(required = false) UUID viewerUserId) {
-        return groups.listByUser(viewerUserId);
+    public List<GroupResponse> list() {
+        return groups.listByUser(currentUser.id());
     }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public GroupResponse create(@Valid @RequestBody CreateGroupRequest request) {
-        return groups.create(request);
+        return groups.create(request, currentUser.id());
     }
 
     @GetMapping("/{groupId}/members")
     public List<GroupMemberResponse> listMembers(
-            @PathVariable UUID groupId,
-            @RequestParam(required = false) UUID viewerUserId
+            @PathVariable UUID groupId
     ) {
-        return groups.listMembers(groupId, viewerUserId);
+        return groups.listMembers(groupId, currentUser.id());
     }
 
     @PostMapping("/{groupId}/members")
@@ -55,11 +57,11 @@ public class GroupController {
             @PathVariable UUID groupId,
             @Valid @RequestBody AddGroupMemberRequest request
     ) {
-        return groups.addMember(groupId, request);
+        return groups.addMember(groupId, request, currentUser.id());
     }
 
     @DeleteMapping("/{groupId}")
-    public void delete(@PathVariable UUID groupId, @RequestParam UUID adminUserId) {
-        groups.delete(groupId, adminUserId);
+    public void delete(@PathVariable UUID groupId) {
+        groups.delete(groupId, currentUser.id());
     }
 }

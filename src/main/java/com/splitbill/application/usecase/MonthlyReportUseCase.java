@@ -40,6 +40,7 @@ public class MonthlyReportUseCase {
     private final UserJpaRepository users;
     private final GroupJpaRepository groups;
     private final GroupMemberJpaRepository groupMembers;
+    private final GroupUseCase groupRules;
 
     public MonthlyReportUseCase(
             MonthJpaRepository months,
@@ -47,7 +48,8 @@ public class MonthlyReportUseCase {
             ExpenseJpaRepository expenses,
             UserJpaRepository users,
             GroupJpaRepository groups,
-            GroupMemberJpaRepository groupMembers
+            GroupMemberJpaRepository groupMembers,
+            GroupUseCase groupRules
     ) {
         this.months = months;
         this.events = events;
@@ -55,21 +57,24 @@ public class MonthlyReportUseCase {
         this.users = users;
         this.groups = groups;
         this.groupMembers = groupMembers;
+        this.groupRules = groupRules;
     }
 
     @Transactional
-    public MonthlyReportResponse getByMonth(UUID monthId) {
+    public MonthlyReportResponse getByMonth(UUID monthId, UUID requesterId) {
         MonthJpaEntity month = months.findById(monthId)
                 .orElseThrow(() -> new DomainException("Month not found"));
         EventJpaEntity event = events.findFirstByMonthIdAndTypeOrderByCreatedAtAsc(monthId, EventType.MONTHLY)
                 .orElseGet(() -> createMonthlyEvent(month));
+        groupRules.requireMembership(event.getGroup().getId(), requesterId);
         return buildReport(event, month);
     }
 
     @Transactional(readOnly = true)
-    public MonthlyReportResponse getByEvent(UUID eventId) {
+    public MonthlyReportResponse getByEvent(UUID eventId, UUID requesterId) {
         EventJpaEntity event = events.findById(eventId)
                 .orElseThrow(() -> new DomainException("Event not found"));
+        groupRules.requireMembership(event.getGroup().getId(), requesterId);
         MonthJpaEntity month = event.getMonth();
         return buildReport(event, month);
     }
@@ -97,6 +102,8 @@ public class MonthlyReportUseCase {
                 month == null ? null : month.getId(),
                 event.getId(),
                 event.getName(),
+                event.getGroup().getId(),
+                event.getGroup().getName(),
                 month == null ? 0 : month.getMonth(),
                 month == null ? 0 : month.getYear(),
                 event.getStatus().name(),

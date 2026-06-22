@@ -67,12 +67,12 @@ public class MonthUseCase {
     }
 
     @Transactional
-    public MonthResponse close(UUID id) {
+    public MonthResponse close(UUID id, UUID requesterId) {
         MonthJpaEntity month = months.findById(id)
                 .orElseThrow(() -> new DomainException("Month not found"));
         events.findFirstByMonthIdAndTypeOrderByCreatedAtAsc(month.getId(), EventType.MONTHLY)
                 .ifPresentOrElse(
-                        event -> eventUseCase.close(event.getId(), null),
+                        event -> eventUseCase.close(event.getId(), null, requesterId),
                         () -> {
                             month.setStatus(MonthStatus.CLOSED);
                             month.setClosedAt(LocalDateTime.now());
@@ -82,16 +82,13 @@ public class MonthUseCase {
     }
 
     @Transactional
-    public MonthResponse reopen(UUID id) {
+    public MonthResponse reopen(UUID id, UUID requesterId) {
         MonthJpaEntity month = months.findById(id)
                 .orElseThrow(() -> new DomainException("Month not found"));
         month.setStatus(MonthStatus.OPEN);
         month.setClosedAt(null);
         events.findFirstByMonthIdAndTypeOrderByCreatedAtAsc(month.getId(), EventType.MONTHLY)
-                .ifPresent(event -> {
-                    event.setStatus(EventStatus.OPEN);
-                    event.setClosedAt(null);
-                });
+                .ifPresent(event -> eventUseCase.reopen(event.getId(), requesterId));
         return toResponse(month);
     }
 

@@ -3,6 +3,7 @@ package com.splitbill.adapters.input.rest;
 import com.splitbill.application.dto.EventSettlementResponse;
 import com.splitbill.application.dto.UpdateSettlementStatusRequest;
 import com.splitbill.application.usecase.EventSettlementUseCase;
+import com.splitbill.infrastructure.security.CurrentUser;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -19,14 +20,16 @@ import java.util.UUID;
 public class EventSettlementController {
 
     private final EventSettlementUseCase settlements;
+    private final CurrentUser currentUser;
 
-    public EventSettlementController(EventSettlementUseCase settlements) {
+    public EventSettlementController(EventSettlementUseCase settlements, CurrentUser currentUser) {
         this.settlements = settlements;
+        this.currentUser = currentUser;
     }
 
     @GetMapping
     public List<EventSettlementResponse> listByEvent(@PathVariable UUID eventId) {
-        return settlements.listByEvent(eventId);
+        return settlements.listByEvent(eventId, currentUser.id());
     }
 
     @PutMapping("/{settlementId}")
@@ -34,6 +37,6 @@ public class EventSettlementController {
             @PathVariable UUID settlementId,
             @Valid @RequestBody UpdateSettlementStatusRequest request
     ) {
-        return settlements.updateStatus(settlementId, request);
+        return settlements.updateStatus(settlementId, request, currentUser.id());
     }
 }

@@ -101,8 +101,8 @@ public class EventUseCase {
     }
 
     @Transactional
-    public EventResponse create(CreateEventRequest request) {
-        groupRules.requireAdmin(request.groupId(), request.adminUserId());
+    public EventResponse create(CreateEventRequest request, UUID requesterId) {
+        groupRules.requireAdmin(request.groupId(), requesterId);
         GroupJpaEntity group = groups.findById(request.groupId())
                 .orElseThrow(() -> new DomainException("Group not found"));
         MonthJpaEntity month = null;
@@ -154,9 +154,10 @@ public class EventUseCase {
     }
 
     @Transactional
-    public EventResponse close(UUID id, CloseEventRequest request) {
+    public EventResponse close(UUID id, CloseEventRequest request, UUID requesterId) {
         EventJpaEntity event = events.findById(id)
                 .orElseThrow(() -> new DomainException("Event not found"));
+        groupRules.requireAdmin(event.getGroup().getId(), requesterId);
         if (event.getStatus() == EventStatus.CLOSED) {
             throw new DomainException("Event is already closed");
         }
@@ -293,9 +294,10 @@ public class EventUseCase {
     }
 
     @Transactional
-    public EventResponse reopen(UUID id) {
+    public EventResponse reopen(UUID id, UUID requesterId) {
         EventJpaEntity event = events.findById(id)
                 .orElseThrow(() -> new DomainException("Event not found"));
+        groupRules.requireAdmin(event.getGroup().getId(), requesterId);
         event.setStatus(EventStatus.OPEN);
         event.setClosedAt(null);
         if (event.getType() == EventType.MONTHLY && event.getMonth() != null) {

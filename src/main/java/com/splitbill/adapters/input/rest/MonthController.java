@@ -3,6 +3,7 @@ package com.splitbill.adapters.input.rest;
 import com.splitbill.application.dto.CreateMonthRequest;
 import com.splitbill.application.dto.MonthResponse;
 import com.splitbill.application.usecase.MonthUseCase;
+import com.splitbill.infrastructure.security.CurrentUser;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -22,9 +23,11 @@ import java.util.UUID;
 public class MonthController {
 
     private final MonthUseCase months;
+    private final CurrentUser currentUser;
 
-    public MonthController(MonthUseCase months) {
+    public MonthController(MonthUseCase months, CurrentUser currentUser) {
         this.months = months;
+        this.currentUser = currentUser;
     }
 
     @GetMapping
@@ -40,11 +43,11 @@ public class MonthController {
 
     @PutMapping("/{id}/close")
     public MonthResponse close(@PathVariable UUID id) {
-        return months.close(id);
+        return months.close(id, currentUser.id());
     }
 
     @PutMapping("/{id}/reopen")
     public MonthResponse reopen(@PathVariable UUID id) {
-        return months.reopen(id);
+        return months.reopen(id, currentUser.id());
     }
 }

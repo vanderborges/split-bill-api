@@ -4,6 +4,7 @@ import com.splitbill.application.dto.CloseEventRequest;
 import com.splitbill.application.dto.CreateEventRequest;
 import com.splitbill.application.dto.EventResponse;
 import com.splitbill.application.usecase.EventUseCase;
+import com.splitbill.infrastructure.security.CurrentUser;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -25,37 +26,38 @@ import java.util.UUID;
 public class EventController {
 
     private final EventUseCase events;
+    private final CurrentUser currentUser;
 
-    public EventController(EventUseCase events) {
+    public EventController(EventUseCase events, CurrentUser currentUser) {
         this.events = events;
+        this.currentUser = currentUser;
     }
 
     @GetMapping
     public List<EventResponse> list(
-            @RequestParam(required = false) UUID viewerUserId,
             @RequestParam(required = false) UUID groupId
     ) {
-        return events.list(viewerUserId, groupId);
+        return events.list(currentUser.id(), groupId);
     }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public EventResponse create(@Valid @RequestBody CreateEventRequest request) {
-        return events.create(request);
+        return events.create(request, currentUser.id());
     }
 
     @PutMapping("/{id}/close")
     public EventResponse close(@PathVariable UUID id, @RequestBody(required = false) CloseEventRequest request) {
-        return events.close(id, request);
+        return events.close(id, request, currentUser.id());
     }
 
     @PutMapping("/{id}/reopen")
     public EventResponse reopen(@PathVariable UUID id) {
-        return events.reopen(id);
+        return events.reopen(id, currentUser.id());
     }
 
     @DeleteMapping("/{id}")
-    public void delete(@PathVariable UUID id, @RequestParam UUID adminUserId) {
-        events.delete(id, adminUserId);
+    public void delete(@PathVariable UUID id) {
+        events.delete(id, currentUser.id());
     }
 }

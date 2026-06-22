@@ -47,8 +47,8 @@ public class GroupUseCase {
     }
 
     @Transactional
-    public GroupResponse create(CreateGroupRequest request) {
-        UserJpaEntity admin = activeUser(request.adminUserId());
+    public GroupResponse create(CreateGroupRequest request, UUID creatorId) {
+        UserJpaEntity admin = activeUser(creatorId);
         LocalDateTime now = LocalDateTime.now();
 
         GroupJpaEntity group = new GroupJpaEntity();
@@ -83,8 +83,8 @@ public class GroupUseCase {
     }
 
     @Transactional
-    public GroupMemberResponse addMember(UUID groupId, AddGroupMemberRequest request) {
-        requireAdmin(groupId, request.adminUserId());
+    public GroupMemberResponse addMember(UUID groupId, AddGroupMemberRequest request, UUID requesterId) {
+        requireAdmin(groupId, requesterId);
         GroupJpaEntity group = groups.findById(groupId)
                 .orElseThrow(() -> new DomainException("Group not found"));
         UserJpaEntity user = activeUser(request.userId());

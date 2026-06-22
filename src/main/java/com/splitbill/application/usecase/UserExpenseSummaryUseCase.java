@@ -10,6 +10,8 @@ import com.splitbill.infrastructure.persistence.entity.ExpensePayerJpaEntity;
 import com.splitbill.infrastructure.persistence.entity.UserJpaEntity;
 import com.splitbill.infrastructure.persistence.repository.ExpenseJpaRepository;
 import com.splitbill.infrastructure.persistence.repository.UserJpaRepository;
+import com.splitbill.infrastructure.persistence.repository.GroupMemberJpaRepository;
+import com.splitbill.domain.valueobject.GroupMemberRole;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,21 +29,41 @@ public class UserExpenseSummaryUseCase {
 
     private final ExpenseJpaRepository expenses;
     private final UserJpaRepository users;
+    private final GroupMemberJpaRepository groupMembers;
 
-    public UserExpenseSummaryUseCase(ExpenseJpaRepository expenses, UserJpaRepository users) {
+    public UserExpenseSummaryUseCase(ExpenseJpaRepository expenses, UserJpaRepository users, GroupMemberJpaRepository groupMembers) {
         this.expenses = expenses;
         this.users = users;
+        this.groupMembers = groupMembers;
     }
 
     @Transactional(readOnly = true)
     public UserExpenseSummaryResponse get(
+            UUID groupId,
             UUID userId,
             LocalDate from,
             LocalDate to,
             String category,
-            UUID eventId
+            UUID eventId,
+            UUID requesterId
     ) {
-        UserJpaEntity user = users.findById(userId)
+        if (!groupMembers.existsByGroupIdAndUserIdAndActiveTrue(groupId, requesterId)) {
+            throw new DomainException("User does not belong to this group");
+        }
+        boolean requesterIsAdmin = groupMembers.existsByGroupIdAndUserIdAndRoleAndActiveTrue(
+                groupId, requesterId, GroupMemberRole.ADMIN);
+        UUID targetUserId = userId == null ? null : userId;
+        if (targetUserId == null && !requesterIsAdmin) {
+            targetUserId = requesterId;
+        }
+        if (targetUserId != null && !targetUserId.equals(requesterId) && !requesterIsAdmin) {
+            throw new DomainException("Members can only view their own expense summary");
+        }
+        if (targetUserId != null && !groupMembers.existsByGroupIdAndUserIdAndActiveTrue(groupId, targetUserId)) {
+            throw new DomainException("User does not belong to this group");
+        }
+        final UUID selectedUserId = targetUserId;
+        UserJpaEntity user = selectedUserId == null ? null : users.findById(selectedUserId)
                 .orElseThrow(() -> new DomainException("User not found"));
         LocalDate start = from == null ? LocalDate.of(2000, 1, 1) : from;
         LocalDate end = to == null ? LocalDate.of(2999, 12, 31) : to;
@@ -50,29 +72,30 @@ public class UserExpenseSummaryUseCase {
         }
 
         List<ExpenseJpaEntity> filtered = expenses.findByExpenseDateBetweenAndDeletedAtIsNull(start, end).stream()
+                .filter(expense -> expense.getEvent().getGroup().getId().equals(groupId))
                 .filter(expense -> eventId == null || expense.getEvent().getId().equals(eventId))
                 .filter(expense -> category == null || expense.getCategory().equalsIgnoreCase(category))
-                .filter(expense -> hasUser(expense, userId))
+                .filter(expense -> selectedUserId == null || hasUser(expense, selectedUserId))
                 .sorted(Comparator.comparing(ExpenseJpaEntity::getExpenseDate))
                 .toList();
 
         BigDecimal totalConsumed = filtered.stream()
                 .flatMap(expense -> expense.getParticipants().stream())
-                .filter(participant -> participant.getUser().getId().equals(userId))
+                .filter(participant -> selectedUserId == null || participant.getUser().getId().equals(selectedUserId))
                 .map(participant -> participant.getShareAmount().setScale(MONEY_SCALE, RoundingMode.HALF_UP))
                 .reduce(BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP), BigDecimal::add);
 
         BigDecimal totalPaid = filtered.stream()
                 .flatMap(expense -> expense.getPayers().stream())
-                .filter(payer -> payer.getUser().getId().equals(userId))
+                .filter(payer -> selectedUserId == null || payer.getUser().getId().equals(selectedUserId))
                 .map(payer -> payer.getPaidAmount().setScale(MONEY_SCALE, RoundingMode.HALF_UP))
                 .reduce(BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP), BigDecimal::add);
 
         BigDecimal balance = totalPaid.subtract(totalConsumed).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
 
         return new UserExpenseSummaryResponse(
-                user.getId(),
-                user.getNickname(),
+                user == null ? null : user.getId(),
+                user == null ? "Consolidado do grupo" : user.getNickname(),
                 start,
                 end,
                 totalConsumed,

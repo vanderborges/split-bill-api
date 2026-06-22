@@ -81,16 +81,20 @@ public class ExpenseUseCase {
     }
 
     @Transactional(readOnly = true)
-    public List<ExpenseResponse> listByEvent(UUID eventId) {
+    public List<ExpenseResponse> listByEvent(UUID eventId, UUID requesterId) {
+        EventJpaEntity event = events.findById(eventId)
+                .orElseThrow(() -> new DomainException("Event not found"));
+        requireMembership(event.getGroup().getId(), requesterId);
         return expenses.findByEventIdAndDeletedAtIsNull(eventId).stream()
                 .map(this::toResponse)
                 .toList();
     }
 
     @Transactional
-    public ExpenseResponse create(CreateExpenseRequest request) {
+    public ExpenseResponse create(CreateExpenseRequest request, UUID requesterId) {
         validateInstallments(request);
         EventJpaEntity event = resolveEvent(request);
+        requireMembership(event.getGroup().getId(), requesterId);
         MonthJpaEntity month = resolveMonth(request, event);
         validateOpen(event, month);
 
@@ -112,13 +116,14 @@ public class ExpenseUseCase {
     }
 
     @Transactional
-    public ExpenseResponse update(UUID id, CreateExpenseRequest request) {
+    public ExpenseResponse update(UUID id, CreateExpenseRequest request, UUID requesterId) {
         validateInstallments(request);
         ExpenseJpaEntity expense = expenses.findById(id)
                 .orElseThrow(() -> new DomainException("Expense not found"));
         if (expense.getDeletedAt() != null) {
             throw new DomainException("Expense not found");
         }
+        requireMembership(expense.getEvent().getGroup().getId(), requesterId);
         if (expense.getMonth() != null && expense.getMonth().getStatus() == MonthStatus.CLOSED) {
             throw new DomainException("Cannot edit expense from a closed month");
         }
@@ -126,6 +131,7 @@ public class ExpenseUseCase {
             throw new DomainException("Cannot edit expense from a closed event");
         }
         EventJpaEntity event = resolveEvent(request);
+        requireMembership(event.getGroup().getId(), requesterId);
         MonthJpaEntity month = resolveMonth(request, event);
         validateOpen(event, month);
         expense.setEvent(event);
@@ -266,6 +272,12 @@ public class ExpenseUseCase {
             if (!groupMembers.existsByGroupIdAndUserIdAndActiveTrue(event.getGroup().getId(), userId)) {
                 throw new DomainException("Expense users must belong to the event group");
             }
+        }
+    }
+
+    private void requireMembership(UUID groupId, UUID userId) {
+        if (!groupMembers.existsByGroupIdAndUserIdAndActiveTrue(groupId, userId)) {
+            throw new DomainException("User does not belong to this group");
         }
     }
 

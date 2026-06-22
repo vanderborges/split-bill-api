@@ -8,6 +8,8 @@ public record MonthlyReportResponse(
         UUID monthId,
         UUID eventId,
         String eventName,
+        UUID groupId,
+        String groupName,
         int month,
         int year,
         String status,
