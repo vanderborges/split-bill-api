@@ -104,6 +104,11 @@ public class GroupUseCase {
                     created.setCreatedAt(LocalDateTime.now());
                     return created;
                 });
+        if (member.getRole() == GroupMemberRole.ADMIN
+                && request.role() != GroupMemberRole.ADMIN
+                && members.countByGroupIdAndRoleAndActiveTrue(groupId, GroupMemberRole.ADMIN) <= 1) {
+            throw new DomainException("Group must have at least one admin");
+        }
         member.setRole(request.role());
         member.setActive(true);
         member.setUpdatedAt(LocalDateTime.now());
