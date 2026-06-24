@@ -12,6 +12,10 @@ import com.splitbill.infrastructure.persistence.entity.UserJpaEntity;
 import com.splitbill.infrastructure.persistence.repository.GroupJpaRepository;
 import com.splitbill.infrastructure.persistence.repository.GroupMemberJpaRepository;
 import com.splitbill.infrastructure.persistence.repository.UserJpaRepository;
+import com.splitbill.infrastructure.persistence.repository.EventJpaRepository;
+import com.splitbill.infrastructure.persistence.repository.ExpenseJpaRepository;
+import com.splitbill.infrastructure.persistence.entity.EventJpaEntity;
+import com.splitbill.domain.valueobject.EventStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,11 +31,15 @@ public class GroupUseCase {
     private final GroupJpaRepository groups;
     private final GroupMemberJpaRepository members;
     private final UserJpaRepository users;
+    private final EventJpaRepository events;
+    private final ExpenseJpaRepository expenses;
 
-    public GroupUseCase(GroupJpaRepository groups, GroupMemberJpaRepository members, UserJpaRepository users) {
+    public GroupUseCase(GroupJpaRepository groups, GroupMemberJpaRepository members, UserJpaRepository users, EventJpaRepository events, ExpenseJpaRepository expenses) {
         this.groups = groups;
         this.members = members;
         this.users = users;
+        this.events = events;
+        this.expenses = expenses;
     }
 
     @Transactional(readOnly = true)
@@ -124,6 +132,21 @@ public class GroupUseCase {
         group.setUpdatedAt(LocalDateTime.now());
     }
 
+    @Transactional
+    public void removeMember(UUID groupId, UUID userId, UUID requesterId) {
+        requireAdmin(groupId, requesterId);
+        deactivateMember(groupId, userId);
+    }
+
+    @Transactional
+    public void leave(UUID groupId, UUID userId) {
+        requireMembership(groupId, userId);
+        if (hasPendingBalance(groupId, userId)) {
+            throw new DomainException("Settle your open event balances before leaving the group");
+        }
+        deactivateMember(groupId, userId);
+    }
+
     public void requireMembership(UUID groupId, UUID userId) {
         if (userId == null) {
             return;
@@ -137,6 +160,43 @@ public class GroupUseCase {
         if (userId == null || !members.existsByGroupIdAndUserIdAndRoleAndActiveTrue(groupId, userId, GroupMemberRole.ADMIN)) {
             throw new DomainException("Only group admins can perform this action");
         }
+    }
+
+    private void deactivateMember(UUID groupId, UUID userId) {
+        GroupMemberJpaEntity member = members.findByGroupIdAndUserId(groupId, userId)
+                .orElseThrow(() -> new DomainException("Group member not found"));
+        if (!member.isActive()) {
+            return;
+        }
+        if (member.getRole() == GroupMemberRole.ADMIN
+                && members.countByGroupIdAndRoleAndActiveTrue(groupId, GroupMemberRole.ADMIN) <= 1) {
+            throw new DomainException("Group must have at least one admin");
+        }
+        member.setActive(false);
+        member.setUpdatedAt(LocalDateTime.now());
+    }
+
+    private boolean hasPendingBalance(UUID groupId, UUID userId) {
+        return events.findByGroupIdAndDeletedAtIsNull(groupId).stream()
+                .filter(event -> event.getStatus() == EventStatus.OPEN)
+                .map(event -> balanceForEvent(event, userId))
+                .anyMatch(balance -> balance.compareTo(java.math.BigDecimal.ZERO) != 0);
+    }
+
+    private java.math.BigDecimal balanceForEvent(EventJpaEntity event, UUID userId) {
+        return expenses.findByEventIdAndDeletedAtIsNull(event.getId()).stream()
+                .map(expense -> {
+                    java.math.BigDecimal paid = expense.getPayers().stream()
+                            .filter(payer -> payer.getUser().getId().equals(userId))
+                            .map(payer -> payer.getPaidAmount())
+                            .reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
+                    java.math.BigDecimal consumed = expense.getParticipants().stream()
+                            .filter(participant -> participant.getUser().getId().equals(userId))
+                            .map(participant -> participant.getShareAmount())
+                            .reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
+                    return paid.subtract(consumed);
+                })
+                .reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
     }
 
     private UserJpaEntity activeUser(UUID userId) {

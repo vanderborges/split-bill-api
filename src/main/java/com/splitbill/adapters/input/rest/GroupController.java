@@ -60,6 +60,16 @@ public class GroupController {
         return groups.addMember(groupId, request, currentUser.id());
     }
 
+    @DeleteMapping("/{groupId}/members/{userId}")
+    public void removeMember(@PathVariable UUID groupId, @PathVariable UUID userId) {
+        groups.removeMember(groupId, userId, currentUser.id());
+    }
+
+    @PostMapping("/{groupId}/leave")
+    public void leave(@PathVariable UUID groupId) {
+        groups.leave(groupId, currentUser.id());
+    }
+
     @DeleteMapping("/{groupId}")
     public void delete(@PathVariable UUID groupId) {
         groups.delete(groupId, currentUser.id());

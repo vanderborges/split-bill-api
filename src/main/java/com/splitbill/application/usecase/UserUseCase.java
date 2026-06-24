@@ -1,6 +1,7 @@
 package com.splitbill.application.usecase;
 
 import com.splitbill.application.dto.CreateUserRequest;
+import com.splitbill.application.dto.ChangePasswordRequest;
 import com.splitbill.application.dto.UpdateUserRequest;
 import com.splitbill.application.dto.UserResponse;
 import com.splitbill.domain.exception.DomainException;
@@ -125,6 +126,17 @@ public class UserUseCase {
         user.setActive(false);
         user.setDeletedAt(now);
         user.setUpdatedAt(now);
+    }
+
+    @Transactional
+    public void changePassword(UUID userId, ChangePasswordRequest request) {
+        UserJpaEntity user = users.findById(userId)
+                .orElseThrow(() -> new DomainException("User not found"));
+        if (!passwordEncoder.matches(request.currentPassword(), user.getPasswordHash())) {
+            throw new DomainException("Current password is invalid");
+        }
+        user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
+        user.setUpdatedAt(LocalDateTime.now());
     }
 
     private UserResponse toResponse(UserJpaEntity user) {
