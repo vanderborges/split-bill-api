@@ -2,6 +2,7 @@ package com.splitbill.application.usecase;
 
 import com.splitbill.application.dto.CreateUserRequest;
 import com.splitbill.application.dto.ChangePasswordRequest;
+import com.splitbill.application.dto.ResetPasswordRequest;
 import com.splitbill.application.dto.UpdateUserRequest;
 import com.splitbill.application.dto.UserResponse;
 import com.splitbill.domain.exception.DomainException;
@@ -32,6 +33,19 @@ public class UserUseCase {
                 .filter(user -> user.getDeletedAt() == null)
                 .map(this::toResponse)
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public UserResponse get(UUID id, UUID requesterId, boolean requesterIsAdmin) {
+        if (!requesterIsAdmin && !id.equals(requesterId)) {
+            throw new DomainException("Users can only view their own profile");
+        }
+        UserJpaEntity user = users.findById(id)
+                .orElseThrow(() -> new DomainException("User not found"));
+        if (user.getDeletedAt() != null) {
+            throw new DomainException("User not found");
+        }
+        return toResponse(user);
     }
 
     @Transactional
@@ -134,6 +148,20 @@ public class UserUseCase {
                 .orElseThrow(() -> new DomainException("User not found"));
         if (!passwordEncoder.matches(request.currentPassword(), user.getPasswordHash())) {
             throw new DomainException("Current password is invalid");
+        }
+        user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
+        user.setUpdatedAt(LocalDateTime.now());
+    }
+
+    @Transactional
+    public void resetPassword(UUID userId, ResetPasswordRequest request, boolean requesterIsAdmin) {
+        if (!requesterIsAdmin) {
+            throw new DomainException("Only admins can reset passwords");
+        }
+        UserJpaEntity user = users.findById(userId)
+                .orElseThrow(() -> new DomainException("User not found"));
+        if (user.getDeletedAt() != null) {
+            throw new DomainException("User not found");
         }
         user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
         user.setUpdatedAt(LocalDateTime.now());

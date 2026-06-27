@@ -2,6 +2,7 @@ package com.splitbill.adapters.input.rest;
 
 import com.splitbill.application.dto.CreateUserRequest;
 import com.splitbill.application.dto.ChangePasswordRequest;
+import com.splitbill.application.dto.ResetPasswordRequest;
 import com.splitbill.application.dto.UpdateUserRequest;
 import com.splitbill.application.dto.UserResponse;
 import com.splitbill.application.usecase.UserUseCase;
@@ -39,6 +40,11 @@ public class UserController {
         return users.list();
     }
 
+    @GetMapping("/{id}")
+    public UserResponse get(@PathVariable UUID id) {
+        return users.get(id, currentUserId(), isAdmin());
+    }
+
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public UserResponse create(@Valid @RequestBody CreateUserRequest request) {
@@ -65,6 +71,15 @@ public class UserController {
     @PutMapping("/me/password")
     public ResponseEntity<Void> changePassword(@Valid @RequestBody ChangePasswordRequest request) {
         users.changePassword(currentUserId(), request);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PutMapping("/{id}/password/reset")
+    public ResponseEntity<Void> resetPassword(
+            @PathVariable UUID id,
+            @Valid @RequestBody ResetPasswordRequest request
+    ) {
+        users.resetPassword(id, request, isAdmin());
         return ResponseEntity.noContent().build();
     }
 
