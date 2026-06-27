@@ -61,6 +61,7 @@ public class BearerTokenAuthenticationFilter extends OncePerRequestFilter {
         return HttpMethod.OPTIONS.matches(method)
                 || isPost(method, path, "/auth/login")
                 || isPost(method, path, "/users")
+                || path.equals("/health")
                 || path.equals("/swagger-ui.html")
                 || path.startsWith("/swagger-ui/")
                 || path.startsWith("/v3/api-docs/");
