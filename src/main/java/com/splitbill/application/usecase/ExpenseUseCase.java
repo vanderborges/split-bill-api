@@ -11,6 +11,7 @@ import com.splitbill.domain.valueobject.EventStatus;
 import com.splitbill.domain.valueobject.EventType;
 import com.splitbill.domain.valueobject.MonthStatus;
 import com.splitbill.domain.valueobject.ParticipantShare;
+import com.splitbill.domain.valueobject.ParticipantSplit;
 import com.splitbill.infrastructure.persistence.entity.EventJpaEntity;
 import com.splitbill.infrastructure.persistence.entity.ExpenseJpaEntity;
 import com.splitbill.infrastructure.persistence.entity.ExpensePayerJpaEntity;
@@ -217,9 +218,13 @@ public class ExpenseUseCase {
         payerRequests = scalePayersForAmount(request.amount(), amount, payerRequests);
         validatePayersTotal(amount, payerRequests);
 
-        Map<UUID, UserJpaEntity> participantsById = users.findAllById(request.participantIds()).stream()
+        List<ParticipantSplit> participantRequests = normalizeParticipants(request);
+        List<UUID> participantIds = participantRequests.stream()
+                .map(ParticipantSplit::userId)
+                .toList();
+        Map<UUID, UserJpaEntity> participantsById = users.findAllById(participantIds).stream()
                 .collect(Collectors.toMap(UserJpaEntity::getId, Function.identity()));
-        if (participantsById.size() != request.participantIds().stream().distinct().count()) {
+        if (participantsById.size() != participantIds.stream().distinct().count()) {
             throw new DomainException("One or more participants were not found");
         }
 
@@ -231,13 +236,13 @@ public class ExpenseUseCase {
         if (payersById.size() != payerRequests.stream().map(ExpensePayerRequest::userId).distinct().count()) {
             throw new DomainException("One or more payers were not found");
         }
-        validateUsersBelongToEventGroup(expense.getEvent(), request.participantIds());
+        validateUsersBelongToEventGroup(expense.getEvent(), participantIds);
         validateUsersBelongToEventGroup(expense.getEvent(), payerRequests.stream()
                 .map(ExpensePayerRequest::userId)
                 .toList());
 
         UserJpaEntity mainPayer = payersById.get(payerRequests.get(0).userId());
-        List<ParticipantShare> shares = splitCalculator.splitEqually(amount, request.participantIds());
+        List<ParticipantShare> shares = splitCalculator.splitByShares(amount, participantRequests);
 
         expense.setDescription(description);
         expense.setAmount(amount.setScale(2, RoundingMode.HALF_UP));
@@ -254,6 +259,8 @@ public class ExpenseUseCase {
             participant.setExpense(expense);
             participant.setUser(participantsById.get(share.userId()));
             participant.setShareAmount(share.amount());
+            participant.setShareCount(share.shareCount());
+            participant.setShareDescription(normalizeDescription(share.shareDescription()));
             expense.getParticipants().add(participant);
         }
 
@@ -366,6 +373,47 @@ public class ExpenseUseCase {
         return new ArrayList<>(List.of(new ExpensePayerRequest(request.payerId(), request.amount())));
     }
 
+    private List<ParticipantSplit> normalizeParticipants(CreateExpenseRequest request) {
+        List<ParticipantSplit> participants;
+        if (request.participants() != null && !request.participants().isEmpty()) {
+            participants = request.participants().stream()
+                    .map(participant -> new ParticipantSplit(
+                            participant.userId(),
+                            participant.shareCount() == null ? 1 : participant.shareCount(),
+                            normalizeDescription(participant.shareDescription())
+                    ))
+                    .toList();
+        } else if (request.participantIds() != null && !request.participantIds().isEmpty()) {
+            participants = request.participantIds().stream()
+                    .map(userId -> new ParticipantSplit(userId, 1, null))
+                    .toList();
+        } else {
+            throw new DomainException("Expense must have at least one participant");
+        }
+        if (participants.stream().map(ParticipantSplit::userId).distinct().count() != participants.size()) {
+            throw new DomainException("Expense cannot have duplicated participants");
+        }
+        if (participants.stream().anyMatch(participant -> participant.userId() == null)) {
+            throw new DomainException("Expense participant user is required");
+        }
+        if (participants.stream().anyMatch(participant -> participant.shareCount() <= 0)) {
+            throw new DomainException("Participant share count must be greater than zero");
+        }
+        if (participants.stream().anyMatch(participant ->
+                participant.shareDescription() != null && participant.shareDescription().length() > 160
+        )) {
+            throw new DomainException("Participant share description must have at most 160 characters");
+        }
+        return participants;
+    }
+
+    private String normalizeDescription(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim();
+    }
+
     private void validatePayersTotal(BigDecimal amount, List<ExpensePayerRequest> payers) {
         if (payers.isEmpty()) {
             throw new DomainException("Expense must have at least one payer");
@@ -414,7 +462,9 @@ public class ExpenseUseCase {
                         .map(participant -> new ExpenseParticipantResponse(
                                 participant.getUser().getId(),
                                 participant.getUser().getNickname(),
-                                participant.getShareAmount()
+                                participant.getShareAmount(),
+                                participant.getShareCount(),
+                                participant.getShareDescription()
                         ))
                         .toList()
         );

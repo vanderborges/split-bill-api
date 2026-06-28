@@ -9,6 +9,7 @@ import com.splitbill.domain.valueobject.EventStatus;
 import com.splitbill.domain.valueobject.EventType;
 import com.splitbill.domain.valueobject.MonthStatus;
 import com.splitbill.domain.valueobject.ParticipantShare;
+import com.splitbill.domain.valueobject.ParticipantSplit;
 import com.splitbill.infrastructure.persistence.entity.EventJpaEntity;
 import com.splitbill.infrastructure.persistence.entity.ExpenseJpaEntity;
 import com.splitbill.infrastructure.persistence.entity.ExpensePayerJpaEntity;
@@ -221,8 +222,12 @@ public class EventUseCase {
             }
 
             ExpenseJpaEntity template = expensesByInstallment.getOrDefault(eventExpense.getInstallmentNumber(), eventExpense);
-            List<UUID> participantIds = template.getParticipants().stream()
-                    .map(participant -> participant.getUser().getId())
+            List<ParticipantSplit> participants = template.getParticipants().stream()
+                    .map(participant -> new ParticipantSplit(
+                            participant.getUser().getId(),
+                            participant.getShareCount(),
+                            participant.getShareDescription()
+                    ))
                     .toList();
             YearMonth nextReference = YearMonth.of(event.getMonth().getYear(), event.getMonth().getMonth()).plusMonths(1);
             MonthJpaEntity month = findOrCreateMonth(nextReference.getMonthValue(), nextReference.getYear());
@@ -234,7 +239,7 @@ public class EventUseCase {
                     template,
                     targetEvent,
                     month,
-                    participantIds,
+                    participants,
                     template.getInstallmentGroup().getTotalAmount(),
                     nextInstallmentNumber
             );
@@ -245,7 +250,7 @@ public class EventUseCase {
             ExpenseJpaEntity template,
             EventJpaEntity targetEvent,
             MonthJpaEntity month,
-            List<UUID> participantIds,
+            List<ParticipantSplit> participants,
             BigDecimal amount,
             int installmentNumber
     ) {
@@ -265,7 +270,7 @@ public class EventUseCase {
         expense.setCreatedAt(now);
         expense.setUpdatedAt(now);
 
-        for (ParticipantShare share : splitCalculator.splitEqually(amount, participantIds)) {
+        for (ParticipantShare share : splitCalculator.splitByShares(amount, participants)) {
             ExpenseParticipantJpaEntity participant = new ExpenseParticipantJpaEntity();
             participant.setId(UUID.randomUUID());
             participant.setExpense(expense);
@@ -275,6 +280,8 @@ public class EventUseCase {
                     .orElseThrow(() -> new DomainException("Installment participant not found"))
                     .getUser());
             participant.setShareAmount(share.amount());
+            participant.setShareCount(share.shareCount());
+            participant.setShareDescription(share.shareDescription());
             expense.getParticipants().add(participant);
         }
 
@@ -391,6 +398,7 @@ public class EventUseCase {
         participant.setExpense(expense);
         participant.setUser(debtor);
         participant.setShareAmount(amount);
+        participant.setShareCount(1);
         expense.getParticipants().add(participant);
 
         ExpensePayerJpaEntity payer = new ExpensePayerJpaEntity();

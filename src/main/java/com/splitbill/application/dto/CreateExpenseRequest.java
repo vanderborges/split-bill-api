@@ -1,7 +1,6 @@
 package com.splitbill.application.dto;
 
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 
@@ -18,7 +17,8 @@ public record CreateExpenseRequest(
         UUID payerId,
         UUID monthId,
         UUID eventId,
-        @NotEmpty List<UUID> participantIds,
+        List<UUID> participantIds,
+        List<ExpenseParticipantRequest> participants,
         List<ExpensePayerRequest> payers,
         Integer installments
 ) {

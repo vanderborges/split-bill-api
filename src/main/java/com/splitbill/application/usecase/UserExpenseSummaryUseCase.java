@@ -139,7 +139,9 @@ public class UserExpenseSummaryUseCase {
                         .map(participant -> new ExpenseParticipantResponse(
                                 participant.getUser().getId(),
                                 participant.getUser().getNickname(),
-                                participant.getShareAmount()
+                                participant.getShareAmount(),
+                                participant.getShareCount(),
+                                participant.getShareDescription()
                         ))
                         .toList()
         );

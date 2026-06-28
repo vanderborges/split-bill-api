@@ -29,6 +29,12 @@ public class ExpenseParticipantJpaEntity {
     @Column(name = "share_amount", nullable = false)
     private BigDecimal shareAmount;
 
+    @Column(name = "share_count", nullable = false)
+    private Integer shareCount = 1;
+
+    @Column(name = "share_description")
+    private String shareDescription;
+
     public UUID getId() {
         return id;
     }
@@ -59,5 +65,21 @@ public class ExpenseParticipantJpaEntity {
 
     public void setShareAmount(BigDecimal shareAmount) {
         this.shareAmount = shareAmount;
+    }
+
+    public Integer getShareCount() {
+        return shareCount;
+    }
+
+    public void setShareCount(Integer shareCount) {
+        this.shareCount = shareCount;
+    }
+
+    public String getShareDescription() {
+        return shareDescription;
+    }
+
+    public void setShareDescription(String shareDescription) {
+        this.shareDescription = shareDescription;
     }
 }
