@@ -122,6 +122,7 @@ public class UserExpenseSummaryUseCase {
                 expense.getCategory(),
                 mainPayer == null ? expense.getPayer().getId() : mainPayer.getUser().getId(),
                 mainPayer == null ? expense.getPayer().getNickname() : mainPayer.getUser().getNickname(),
+                expense.getCreatedBy().getId(),
                 expense.getMonth() == null ? null : expense.getMonth().getId(),
                 expense.getEvent().getId(),
                 expense.getSourceEvent() == null ? null : expense.getSourceEvent().getId(),

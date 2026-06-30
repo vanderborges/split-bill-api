@@ -41,6 +41,10 @@ public class ExpenseJpaEntity {
     private UserJpaEntity payer;
 
     @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "created_by_user_id", nullable = false)
+    private UserJpaEntity createdBy;
+
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "month_id")
     private MonthJpaEntity month;
 
@@ -123,6 +127,14 @@ public class ExpenseJpaEntity {
 
     public void setPayer(UserJpaEntity payer) {
         this.payer = payer;
+    }
+
+    public UserJpaEntity getCreatedBy() {
+        return createdBy;
+    }
+
+    public void setCreatedBy(UserJpaEntity createdBy) {
+        this.createdBy = createdBy;
     }
 
     public MonthJpaEntity getMonth() {

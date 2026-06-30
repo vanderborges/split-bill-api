@@ -262,6 +262,7 @@ public class EventUseCase {
         expense.setExpenseDate(nextExpenseDate(template, month));
         expense.setCategory(template.getCategory());
         expense.setPayer(template.getInstallmentGroup().getPayer());
+        expense.setCreatedBy(template.getCreatedBy());
         expense.setMonth(month);
         expense.setEvent(targetEvent);
         expense.setInstallmentGroup(template.getInstallmentGroup());
@@ -387,6 +388,7 @@ public class EventUseCase {
         expense.setExpenseDate(LocalDate.now());
         expense.setCategory("Acerto");
         expense.setPayer(creditor);
+        expense.setCreatedBy(creditor);
         expense.setMonth(target.getMonth() == null ? source.getMonth() : target.getMonth());
         expense.setEvent(target);
         expense.setSourceEvent(source);

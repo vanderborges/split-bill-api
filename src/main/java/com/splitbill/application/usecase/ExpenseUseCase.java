@@ -9,6 +9,7 @@ import com.splitbill.domain.exception.DomainException;
 import com.splitbill.domain.service.ExpenseSplitCalculator;
 import com.splitbill.domain.valueobject.EventStatus;
 import com.splitbill.domain.valueobject.EventType;
+import com.splitbill.domain.valueobject.GroupMemberRole;
 import com.splitbill.domain.valueobject.MonthStatus;
 import com.splitbill.domain.valueobject.ParticipantShare;
 import com.splitbill.domain.valueobject.ParticipantSplit;
@@ -101,14 +102,17 @@ public class ExpenseUseCase {
 
         if (request.installments() != null && request.installments() > 1) {
             validateMonthlyInstallmentEvent(event);
-            return createInstallments(request, event, month);
+            return createInstallments(request, event, month, requesterId);
         }
 
         LocalDateTime now = LocalDateTime.now();
+        UserJpaEntity creator = users.findById(requesterId)
+                .orElseThrow(() -> new DomainException("User not found"));
         ExpenseJpaEntity expense = new ExpenseJpaEntity();
         expense.setId(UUID.randomUUID());
         expense.setMonth(month);
         expense.setEvent(event);
+        expense.setCreatedBy(creator);
         expense.setCreatedAt(now);
         expense.setUpdatedAt(now);
         fillExpense(expense, request, request.description(), request.amount(), null, null);
@@ -131,6 +135,7 @@ public class ExpenseUseCase {
         if (expense.getEvent().getStatus() == EventStatus.CLOSED) {
             throw new DomainException("Cannot edit expense from a closed event");
         }
+        requireExpenseChangePermission(expense, requesterId);
         EventJpaEntity event = resolveEvent(request);
         requireMembership(event.getGroup().getId(), requesterId);
         MonthJpaEntity month = resolveMonth(request, event);
@@ -143,20 +148,22 @@ public class ExpenseUseCase {
     }
 
     @Transactional
-    public void delete(UUID id, UUID adminUserId) {
+    public void delete(UUID id, UUID requesterId) {
         ExpenseJpaEntity expense = expenses.findById(id)
                 .orElseThrow(() -> new DomainException("Expense not found"));
-        if (!groupMembers.existsByGroupIdAndUserIdAndRoleAndActiveTrue(
-                expense.getEvent().getGroup().getId(),
-                adminUserId,
-                com.splitbill.domain.valueobject.GroupMemberRole.ADMIN
-        )) {
-            throw new DomainException("Only group admins can delete expenses");
+        if (expense.getDeletedAt() != null) {
+            throw new DomainException("Expense not found");
         }
+        requireExpenseChangePermission(expense, requesterId);
         expense.setDeletedAt(LocalDateTime.now());
     }
 
-    private ExpenseResponse createInstallments(CreateExpenseRequest request, EventJpaEntity firstEvent, MonthJpaEntity firstMonth) {
+    private ExpenseResponse createInstallments(
+            CreateExpenseRequest request,
+            EventJpaEntity firstEvent,
+            MonthJpaEntity firstMonth,
+            UUID requesterId
+    ) {
         if (firstMonth == null) {
             throw new DomainException("Installments must start from a monthly event or month");
         }
@@ -166,6 +173,8 @@ public class ExpenseUseCase {
         }
         UserJpaEntity payer = users.findById(payerRequests.get(0).userId())
                 .orElseThrow(() -> new DomainException("Payer not found"));
+        UserJpaEntity creator = users.findById(requesterId)
+                .orElseThrow(() -> new DomainException("User not found"));
 
         LocalDateTime now = LocalDateTime.now();
         InstallmentGroupJpaEntity group = new InstallmentGroupJpaEntity();
@@ -183,6 +192,7 @@ public class ExpenseUseCase {
         expense.setId(UUID.randomUUID());
         expense.setMonth(firstMonth);
         expense.setEvent(firstEvent);
+        expense.setCreatedBy(creator);
         expense.setInstallmentGroup(group);
         expense.setInstallmentNumber(1);
         expense.setTotalInstallments(request.installments());
@@ -286,6 +296,20 @@ public class ExpenseUseCase {
         if (!groupMembers.existsByGroupIdAndUserIdAndActiveTrue(groupId, userId)) {
             throw new DomainException("User does not belong to this group");
         }
+    }
+
+    private void requireExpenseChangePermission(ExpenseJpaEntity expense, UUID userId) {
+        if (expense.getCreatedBy().getId().equals(userId)) {
+            return;
+        }
+        if (groupMembers.existsByGroupIdAndUserIdAndRoleAndActiveTrue(
+                expense.getEvent().getGroup().getId(),
+                userId,
+                GroupMemberRole.ADMIN
+        )) {
+            return;
+        }
+        throw new DomainException("Only the creator or group admins can change this expense");
     }
 
     private EventJpaEntity resolveEvent(CreateExpenseRequest request) {
@@ -445,6 +469,7 @@ public class ExpenseUseCase {
                 expense.getCategory(),
                 mainPayer == null ? expense.getPayer().getId() : mainPayer.getUser().getId(),
                 mainPayer == null ? expense.getPayer().getNickname() : mainPayer.getUser().getNickname(),
+                expense.getCreatedBy().getId(),
                 expense.getMonth() == null ? null : expense.getMonth().getId(),
                 expense.getEvent().getId(),
                 expense.getSourceEvent() == null ? null : expense.getSourceEvent().getId(),

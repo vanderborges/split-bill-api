@@ -13,6 +13,7 @@ public record ExpenseResponse(
         String category,
         UUID payerId,
         String payerNickname,
+        UUID createdByUserId,
         UUID monthId,
         UUID eventId,
         UUID sourceEventId,
