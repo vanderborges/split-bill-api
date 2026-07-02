@@ -4,6 +4,7 @@ import com.splitbill.application.dto.CreateUserRequest;
 import com.splitbill.application.dto.ChangePasswordRequest;
 import com.splitbill.application.dto.ResetPasswordRequest;
 import com.splitbill.application.dto.UpdateUserRequest;
+import com.splitbill.application.dto.UserOptionResponse;
 import com.splitbill.application.dto.UserResponse;
 import com.splitbill.domain.exception.DomainException;
 import com.splitbill.infrastructure.persistence.entity.UserJpaEntity;
@@ -36,6 +37,15 @@ public class UserUseCase {
     }
 
     @Transactional(readOnly = true)
+    public List<UserOptionResponse> listOptions() {
+        return users.findAll().stream()
+                .filter(user -> user.getDeletedAt() == null)
+                .filter(UserJpaEntity::isActive)
+                .map(user -> new UserOptionResponse(user.getId(), user.getNickname(), user.isActive()))
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
     public UserResponse get(UUID id, UUID requesterId, boolean requesterIsAdmin) {
         if (!requesterIsAdmin && !id.equals(requesterId)) {
             throw new DomainException("Users can only view their own profile");
@@ -55,8 +65,16 @@ public class UserUseCase {
 
     @Transactional
     public UserResponse create(CreateUserRequest request, boolean allowAdminFlag) {
+        return create(request, allowAdminFlag, false);
+    }
+
+    @Transactional
+    public UserResponse create(CreateUserRequest request, boolean allowAdminFlag, boolean allowBootstrapAdmin) {
         if (users.existsByEmailIgnoreCase(request.email())) {
             throw new DomainException("Email already registered");
+        }
+        if (users.countByDeletedAtIsNull() == 0 && !allowBootstrapAdmin) {
+            throw new DomainException("Bootstrap admin token is required to create the first user");
         }
 
         LocalDateTime now = LocalDateTime.now();
@@ -69,7 +87,7 @@ public class UserUseCase {
         user.setPixKey(request.pixKey());
         user.setBillingUser(resolveBillingUser(user.getId(), allowAdminFlag ? request.billingUserId() : null));
         user.setPasswordHash(passwordEncoder.encode(request.password()));
-        user.setAdmin(resolveAdminFlag(request.admin(), allowAdminFlag));
+        user.setAdmin(resolveAdminFlag(request.admin(), allowAdminFlag, allowBootstrapAdmin));
         user.setActive(true);
         user.setCreatedAt(now);
         user.setUpdatedAt(now);
@@ -77,9 +95,9 @@ public class UserUseCase {
         return toResponse(users.save(user));
     }
 
-    private boolean resolveAdminFlag(boolean requestedAdmin, boolean allowAdminFlag) {
+    private boolean resolveAdminFlag(boolean requestedAdmin, boolean allowAdminFlag, boolean allowBootstrapAdmin) {
         if (users.countByDeletedAtIsNull() == 0) {
-            return true;
+            return allowBootstrapAdmin;
         }
         return allowAdminFlag && requestedAdmin;
     }

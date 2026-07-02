@@ -18,7 +18,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
-import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 
@@ -71,13 +70,14 @@ public class UserExpenseSummaryUseCase {
             throw new DomainException("from must be before or equal to to");
         }
 
-        List<ExpenseJpaEntity> filtered = expenses.findByExpenseDateBetweenAndDeletedAtIsNull(start, end).stream()
-                .filter(expense -> expense.getEvent().getGroup().getId().equals(groupId))
-                .filter(expense -> eventId == null || expense.getEvent().getId().equals(eventId))
-                .filter(expense -> category == null || expense.getCategory().equalsIgnoreCase(category))
-                .filter(expense -> selectedUserId == null || hasUser(expense, selectedUserId))
-                .sorted(Comparator.comparing(ExpenseJpaEntity::getExpenseDate))
-                .toList();
+        List<ExpenseJpaEntity> filtered = expenses.findSummaryCandidates(
+                groupId,
+                start,
+                end,
+                normalizeFilter(category),
+                eventId,
+                selectedUserId
+        );
 
         BigDecimal totalConsumed = filtered.stream()
                 .flatMap(expense -> expense.getParticipants().stream())
@@ -105,9 +105,11 @@ public class UserExpenseSummaryUseCase {
         );
     }
 
-    private boolean hasUser(ExpenseJpaEntity expense, UUID userId) {
-        return expense.getParticipants().stream().anyMatch(participant -> participant.getUser().getId().equals(userId))
-                || expense.getPayers().stream().anyMatch(payer -> payer.getUser().getId().equals(userId));
+    private String normalizeFilter(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim();
     }
 
     private ExpenseResponse toResponse(ExpenseJpaEntity expense) {

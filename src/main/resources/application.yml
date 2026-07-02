@@ -20,6 +20,8 @@ springdoc:
     path: /swagger-ui.html
 
 split-bill:
+  bootstrap:
+    admin-token: ${BOOTSTRAP_ADMIN_TOKEN:}
   auth:
     secret: ${AUTH_TOKEN_SECRET:change-this-local-dev-secret}
   cors:

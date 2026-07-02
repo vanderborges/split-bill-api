@@ -2,6 +2,7 @@ package com.splitbill.adapters.input.rest;
 
 import com.splitbill.domain.exception.DomainException;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -25,6 +26,12 @@ public class ApiExceptionHandler {
                 .map(error -> error.getField() + ": " + error.getDefaultMessage())
                 .toList();
         return new ErrorResponse("Validation failed", details);
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    @ResponseStatus(HttpStatus.FORBIDDEN)
+    public ErrorResponse handleAccessDeniedException(AccessDeniedException exception) {
+        return new ErrorResponse(exception.getMessage(), List.of());
     }
 
     public record ErrorResponse(String message, List<String> details) {

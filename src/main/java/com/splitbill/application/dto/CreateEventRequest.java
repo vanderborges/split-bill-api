@@ -13,7 +13,6 @@ public record CreateEventRequest(
         UUID monthId,
         Integer month,
         Integer year,
-        @NotNull UUID groupId,
-        @NotNull UUID adminUserId
+        @NotNull UUID groupId
 ) {
 }
