@@ -7,7 +7,6 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
-import org.hibernate.annotations.BatchSize;
 
 import java.math.BigDecimal;
 import java.util.UUID;
@@ -25,7 +24,6 @@ public class ExpensePayerJpaEntity {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
-    @BatchSize(size = 50)
     private UserJpaEntity user;
 
     @Column(name = "paid_amount", nullable = false)
