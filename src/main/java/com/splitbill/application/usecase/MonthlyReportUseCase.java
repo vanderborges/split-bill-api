@@ -1,5 +1,6 @@
 package com.splitbill.application.usecase;
 
+import com.splitbill.application.dto.BalanceExpenseDetailResponse;
 import com.splitbill.application.dto.MonthlyBalanceResponse;
 import com.splitbill.application.dto.MonthlyReportResponse;
 import com.splitbill.domain.exception.DomainException;
@@ -82,6 +83,25 @@ public class MonthlyReportUseCase {
     }
 
     @Transactional(readOnly = true)
+    public List<BalanceExpenseDetailResponse> getBalanceDetails(UUID eventId, UUID billingUserId, UUID requesterId) {
+        EventJpaEntity event = events.findById(eventId)
+                .orElseThrow(() -> new DomainException("Event not found"));
+        groupRules.requireMembership(event.getGroup().getId(), requesterId);
+        Set<UUID> groupedUserIds = billingGroupUserIds(event.getGroup().getId(), billingUserId);
+        if (groupedUserIds.isEmpty()) {
+            throw new DomainException("Balance user not found in event group");
+        }
+
+        return expenses.findByEventIdAndDeletedAtIsNull(eventId).stream()
+                .map(expense -> toBalanceDetail(expense, groupedUserIds))
+                .filter(detail -> detail.consumed().compareTo(BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP)) != 0
+                        || detail.paid().compareTo(BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP)) != 0)
+                .sorted(Comparator.comparing(BalanceExpenseDetailResponse::expenseDate)
+                        .thenComparing(BalanceExpenseDetailResponse::description))
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
     public List<BalanceResult> calculateBalances(UUID eventId) {
         return calculateTotals(eventId).values().stream()
                 .map(BalanceTotals::toResult)
@@ -160,6 +180,37 @@ public class MonthlyReportUseCase {
             current = current.getBillingUser();
         }
         return current;
+    }
+
+    private Set<UUID> billingGroupUserIds(UUID groupId, UUID billingUserId) {
+        return groupMembers.findByGroupIdAndActiveTrue(groupId).stream()
+                .map(GroupMemberJpaEntity::getUser)
+                .filter(user -> user.getDeletedAt() == null)
+                .filter(user -> resolveBillingUser(user).getId().equals(billingUserId))
+                .map(UserJpaEntity::getId)
+                .collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new));
+    }
+
+    private BalanceExpenseDetailResponse toBalanceDetail(ExpenseJpaEntity expense, Set<UUID> userIds) {
+        BigDecimal consumed = expense.getParticipants().stream()
+                .filter(participant -> userIds.contains(participant.getUser().getId()))
+                .map(participant -> participant.getShareAmount().setScale(MONEY_SCALE, RoundingMode.HALF_UP))
+                .reduce(BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP), BigDecimal::add);
+        BigDecimal paid = expense.getPayers().stream()
+                .filter(payer -> userIds.contains(payer.getUser().getId()))
+                .map(payer -> payer.getPaidAmount().setScale(MONEY_SCALE, RoundingMode.HALF_UP))
+                .reduce(BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP), BigDecimal::add);
+        BigDecimal impact = paid.subtract(consumed).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+        return new BalanceExpenseDetailResponse(
+                expense.getId(),
+                expense.getDescription(),
+                expense.getExpenseDate(),
+                expense.getCategory(),
+                expense.getAmount(),
+                consumed,
+                paid,
+                impact
+        );
     }
 
     private EventJpaEntity createMonthlyEvent(MonthJpaEntity month) {
