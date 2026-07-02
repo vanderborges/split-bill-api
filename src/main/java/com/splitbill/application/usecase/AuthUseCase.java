@@ -51,6 +51,7 @@ public class AuthUseCase {
                 user.getEmail(),
                 user.getPhone(),
                 user.getPixKey(),
+                user.getBillingUser() == null ? null : user.getBillingUser().getId(),
                 user.isAdmin(),
                 user.isActive()
         );

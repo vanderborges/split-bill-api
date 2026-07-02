@@ -67,6 +67,7 @@ public class UserUseCase {
         user.setEmail(request.email().toLowerCase());
         user.setPhone(request.phone());
         user.setPixKey(request.pixKey());
+        user.setBillingUser(resolveBillingUser(user.getId(), allowAdminFlag ? request.billingUserId() : null));
         user.setPasswordHash(passwordEncoder.encode(request.password()));
         user.setAdmin(resolveAdminFlag(request.admin(), allowAdminFlag));
         user.setActive(true);
@@ -101,7 +102,10 @@ public class UserUseCase {
                 .ifPresent(existing -> {
                     throw new DomainException("Email already registered");
                 });
-        if (!requesterIsAdmin && (request.admin() != user.isAdmin() || request.active() != user.isActive())) {
+        UUID currentBillingUserId = user.getBillingUser() == null ? null : user.getBillingUser().getId();
+        if (!requesterIsAdmin && (request.admin() != user.isAdmin()
+                || request.active() != user.isActive()
+                || !sameId(currentBillingUserId, request.billingUserId()))) {
             throw new DomainException("Users cannot change their access settings");
         }
         if (user.isAdmin() && !request.admin() && users.countByAdminTrueAndActiveTrueAndDeletedAtIsNull() <= 1) {
@@ -116,6 +120,7 @@ public class UserUseCase {
         user.setEmail(request.email().toLowerCase());
         user.setPhone(request.phone());
         user.setPixKey(request.pixKey());
+        user.setBillingUser(resolveBillingUser(user.getId(), request.billingUserId()));
         user.setAdmin(request.admin());
         user.setActive(request.active());
         user.setUpdatedAt(LocalDateTime.now());
@@ -175,8 +180,31 @@ public class UserUseCase {
                 user.getEmail(),
                 user.getPhone(),
                 user.getPixKey(),
+                user.getBillingUser() == null ? null : user.getBillingUser().getId(),
                 user.isAdmin(),
                 user.isActive()
         );
+    }
+
+    private UserJpaEntity resolveBillingUser(UUID userId, UUID billingUserId) {
+        if (billingUserId == null) {
+            return null;
+        }
+        if (billingUserId.equals(userId)) {
+            throw new DomainException("Billing user cannot be the same user");
+        }
+        UserJpaEntity billingUser = users.findById(billingUserId)
+                .orElseThrow(() -> new DomainException("Billing user not found"));
+        if (billingUser.getDeletedAt() != null || !billingUser.isActive()) {
+            throw new DomainException("Billing user must be active");
+        }
+        if (billingUser.getBillingUser() != null) {
+            throw new DomainException("Billing user cannot be linked to another user");
+        }
+        return billingUser;
+    }
+
+    private boolean sameId(UUID first, UUID second) {
+        return first == null ? second == null : first.equals(second);
     }
 }

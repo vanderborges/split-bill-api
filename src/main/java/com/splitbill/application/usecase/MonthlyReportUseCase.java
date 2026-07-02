@@ -27,6 +27,8 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -83,6 +85,7 @@ public class MonthlyReportUseCase {
     public List<BalanceResult> calculateBalances(UUID eventId) {
         return calculateTotals(eventId).values().stream()
                 .map(BalanceTotals::toResult)
+                .filter(balance -> balance.balance().compareTo(BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP)) != 0)
                 .toList();
     }
 
@@ -95,6 +98,7 @@ public class MonthlyReportUseCase {
 
         List<MonthlyBalanceResponse> balances = totalsByUser.values().stream()
                 .map(BalanceTotals::toResponse)
+                .filter(balance -> balance.balance().compareTo(BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP)) != 0)
                 .sorted(Comparator.comparing(MonthlyBalanceResponse::nickname))
                 .toList();
 
@@ -113,6 +117,19 @@ public class MonthlyReportUseCase {
     }
 
     private Map<UUID, BalanceTotals> calculateTotals(UUID eventId) {
+        Map<UUID, BalanceTotals> rawTotalsByUser = calculateRawTotals(eventId);
+        Map<UUID, BalanceTotals> totalsByBillingUser = new LinkedHashMap<>();
+
+        rawTotalsByUser.values().forEach(total -> {
+            UserJpaEntity billingUser = resolveBillingUser(total.user);
+            totalsByBillingUser.computeIfAbsent(billingUser.getId(), ignored -> new BalanceTotals(billingUser))
+                    .merge(total);
+        });
+
+        return totalsByBillingUser;
+    }
+
+    private Map<UUID, BalanceTotals> calculateRawTotals(UUID eventId) {
         EventJpaEntity event = events.findById(eventId)
                 .orElseThrow(() -> new DomainException("Event not found"));
         Map<UUID, BalanceTotals> totalsByUser = new LinkedHashMap<>();
@@ -131,6 +148,18 @@ public class MonthlyReportUseCase {
                             .addPaid(payer.getPaidAmount()));
         }
         return totalsByUser;
+    }
+
+    private UserJpaEntity resolveBillingUser(UserJpaEntity user) {
+        Set<UUID> visited = new HashSet<>();
+        UserJpaEntity current = user;
+        while (current.getBillingUser() != null) {
+            if (!visited.add(current.getId())) {
+                throw new DomainException("Invalid billing user link");
+            }
+            current = current.getBillingUser();
+        }
+        return current;
     }
 
     private EventJpaEntity createMonthlyEvent(MonthJpaEntity month) {
@@ -157,11 +186,13 @@ public class MonthlyReportUseCase {
 
     private static final class BalanceTotals {
         private final UserJpaEntity user;
+        private final Map<UUID, String> nicknamesByUser = new LinkedHashMap<>();
         private BigDecimal consumed = BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
         private BigDecimal paid = BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
 
         private BalanceTotals(UserJpaEntity user) {
             this.user = user;
+            this.nicknamesByUser.put(user.getId(), user.getNickname());
         }
 
         private void addConsumed(BigDecimal amount) {
@@ -172,9 +203,16 @@ public class MonthlyReportUseCase {
             paid = paid.add(amount).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
         }
 
+        private void merge(BalanceTotals totals) {
+            consumed = consumed.add(totals.consumed).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+            paid = paid.add(totals.paid).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+            nicknamesByUser.putAll(totals.nicknamesByUser);
+        }
+
         private MonthlyBalanceResponse toResponse() {
             BigDecimal balance = paid.subtract(consumed).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
-            return new MonthlyBalanceResponse(user.getId(), user.getNickname(), consumed, paid, balance);
+            String nickname = String.join(" + ", nicknamesByUser.values().stream().sorted().toList());
+            return new MonthlyBalanceResponse(user.getId(), nickname, consumed, paid, balance);
         }
 
         private BalanceResult toResult() {

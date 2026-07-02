@@ -9,6 +9,7 @@ public record UserResponse(
         String email,
         String phone,
         String pixKey,
+        UUID billingUserId,
         boolean admin,
         boolean active
 ) {

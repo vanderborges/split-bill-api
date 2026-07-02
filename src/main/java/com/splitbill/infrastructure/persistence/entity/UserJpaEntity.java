@@ -2,7 +2,10 @@ package com.splitbill.infrastructure.persistence.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
 import java.time.LocalDateTime;
@@ -29,6 +32,10 @@ public class UserJpaEntity {
 
     @Column(name = "pix_key", nullable = false)
     private String pixKey;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "billing_user_id")
+    private UserJpaEntity billingUser;
 
     @Column(name = "password_hash", nullable = false)
     private String passwordHash;
@@ -94,6 +101,14 @@ public class UserJpaEntity {
 
     public void setPixKey(String pixKey) {
         this.pixKey = pixKey;
+    }
+
+    public UserJpaEntity getBillingUser() {
+        return billingUser;
+    }
+
+    public void setBillingUser(UserJpaEntity billingUser) {
+        this.billingUser = billingUser;
     }
 
     public String getPasswordHash() {
