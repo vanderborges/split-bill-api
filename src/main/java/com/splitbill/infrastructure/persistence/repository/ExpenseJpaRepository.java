@@ -24,7 +24,12 @@ public interface ExpenseJpaRepository extends JpaRepository<ExpenseJpaEntity, UU
     @Query("""
             select distinct expense
             from ExpenseJpaEntity expense
-            join expense.event event
+            join fetch expense.payer
+            join fetch expense.createdBy
+            left join fetch expense.month
+            join fetch expense.event event
+            left join fetch expense.sourceEvent
+            left join fetch expense.installmentGroup
             where expense.deletedAt is null
               and event.group.id = :groupId
               and expense.expenseDate between :from and :to
