@@ -1,7 +1,5 @@
 package com.splitbill.application.usecase;
 
-import com.splitbill.application.dto.ExpenseParticipantResponse;
-import com.splitbill.application.dto.ExpensePayerResponse;
 import com.splitbill.application.dto.ExpenseResponse;
 import com.splitbill.application.dto.UserExpenseSummaryResponse;
 import com.splitbill.domain.exception.DomainException;
@@ -86,16 +84,17 @@ public class UserExpenseSummaryUseCase {
             throw new DomainException("from must be before or equal to to");
         }
 
-        List<ExpenseJpaEntity> filtered = expenses.findSummaryCandidates(
-                groupId,
-                start,
-                end,
-                normalizeFilter(category),
-                eventId,
-                selectedUserId
-        );
+        String normalizedCategory = normalizeFilter(category);
+        List<ExpenseJpaEntity> candidates = eventId == null
+                ? expenses.findSummaryCandidatesByGroup(groupId, start, end)
+                : expenses.findSummaryCandidatesByGroupAndEvent(groupId, eventId, start, end);
 
-        List<UUID> expenseIds = filtered.stream()
+        List<ExpenseJpaEntity> categoryFiltered = candidates.stream()
+                .filter(expense -> normalizedCategory == null
+                        || expense.getCategory().equalsIgnoreCase(normalizedCategory))
+                .toList();
+
+        List<UUID> expenseIds = categoryFiltered.stream()
                 .map(ExpenseJpaEntity::getId)
                 .toList();
         Map<UUID, List<ExpenseParticipantJpaEntity>> participantsByExpenseId = expenseIds.isEmpty()
@@ -107,14 +106,29 @@ public class UserExpenseSummaryUseCase {
                 : payers.findByExpenseIdsWithUser(expenseIds).stream()
                 .collect(Collectors.groupingBy(payer -> payer.getExpense().getId()));
 
-        BigDecimal totalConsumed = participantsByExpenseId.values().stream()
-                .flatMap(List::stream)
+        List<ExpenseJpaEntity> filtered = selectedUserId == null
+                ? categoryFiltered
+                : categoryFiltered.stream()
+                .filter(expense -> participatesInExpense(
+                        expense.getId(),
+                        selectedUserId,
+                        participantsByExpenseId,
+                        payersByExpenseId
+                ))
+                .toList();
+
+        BigDecimal totalConsumed = filtered.stream()
+                .flatMap(expense -> participantsByExpenseId
+                        .getOrDefault(expense.getId(), Collections.emptyList())
+                        .stream())
                 .filter(participant -> selectedUserId == null || participant.getUser().getId().equals(selectedUserId))
                 .map(participant -> participant.getShareAmount().setScale(MONEY_SCALE, RoundingMode.HALF_UP))
                 .reduce(BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP), BigDecimal::add);
 
-        BigDecimal totalPaid = payersByExpenseId.values().stream()
-                .flatMap(List::stream)
+        BigDecimal totalPaid = filtered.stream()
+                .flatMap(expense -> payersByExpenseId
+                        .getOrDefault(expense.getId(), Collections.emptyList())
+                        .stream())
                 .filter(payer -> selectedUserId == null || payer.getUser().getId().equals(selectedUserId))
                 .map(payer -> payer.getPaidAmount().setScale(MONEY_SCALE, RoundingMode.HALF_UP))
                 .reduce(BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP), BigDecimal::add);
@@ -130,11 +144,7 @@ public class UserExpenseSummaryUseCase {
                 totalPaid,
                 balance,
                 filtered.stream()
-                        .map(expense -> toResponse(
-                                expense,
-                                payersByExpenseId.getOrDefault(expense.getId(), Collections.emptyList()),
-                                participantsByExpenseId.getOrDefault(expense.getId(), Collections.emptyList())
-                        ))
+                        .map(this::toSummaryResponse)
                         .toList()
         );
     }
@@ -146,22 +156,32 @@ public class UserExpenseSummaryUseCase {
         return value.trim();
     }
 
-    private ExpenseResponse toResponse(
-            ExpenseJpaEntity expense,
-            List<ExpensePayerJpaEntity> expensePayers,
-            List<ExpenseParticipantJpaEntity> expenseParticipants
+    private boolean participatesInExpense(
+            UUID expenseId,
+            UUID userId,
+            Map<UUID, List<ExpenseParticipantJpaEntity>> participantsByExpenseId,
+            Map<UUID, List<ExpensePayerJpaEntity>> payersByExpenseId
     ) {
-        ExpensePayerJpaEntity mainPayer = expensePayers.isEmpty()
-                ? null
-                : expensePayers.get(0);
+        boolean consumed = participantsByExpenseId
+                .getOrDefault(expenseId, Collections.emptyList())
+                .stream()
+                .anyMatch(participant -> participant.getUser().getId().equals(userId));
+        boolean paid = payersByExpenseId
+                .getOrDefault(expenseId, Collections.emptyList())
+                .stream()
+                .anyMatch(payer -> payer.getUser().getId().equals(userId));
+        return consumed || paid;
+    }
+
+    private ExpenseResponse toSummaryResponse(ExpenseJpaEntity expense) {
         return new ExpenseResponse(
                 expense.getId(),
                 expense.getDescription(),
                 expense.getAmount(),
                 expense.getExpenseDate(),
                 expense.getCategory(),
-                mainPayer == null ? expense.getPayer().getId() : mainPayer.getUser().getId(),
-                mainPayer == null ? expense.getPayer().getNickname() : mainPayer.getUser().getNickname(),
+                expense.getPayer().getId(),
+                expense.getPayer().getNickname(),
                 expense.getCreatedBy().getId(),
                 expense.getMonth() == null ? null : expense.getMonth().getId(),
                 expense.getEvent().getId(),
@@ -169,22 +189,8 @@ public class UserExpenseSummaryUseCase {
                 expense.getInstallmentGroup() == null ? null : expense.getInstallmentGroup().getId(),
                 expense.getInstallmentNumber(),
                 expense.getTotalInstallments(),
-                expensePayers.stream()
-                        .map(payer -> new ExpensePayerResponse(
-                                payer.getUser().getId(),
-                                payer.getUser().getNickname(),
-                                payer.getPaidAmount()
-                        ))
-                        .toList(),
-                expenseParticipants.stream()
-                        .map(participant -> new ExpenseParticipantResponse(
-                                participant.getUser().getId(),
-                                participant.getUser().getNickname(),
-                                participant.getShareAmount(),
-                                participant.getShareCount(),
-                                participant.getShareDescription()
-                        ))
-                        .toList()
+                Collections.emptyList(),
+                Collections.emptyList()
         );
     }
 }

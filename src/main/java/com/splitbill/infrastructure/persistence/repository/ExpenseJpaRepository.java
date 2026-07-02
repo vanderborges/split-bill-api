@@ -33,31 +33,33 @@ public interface ExpenseJpaRepository extends JpaRepository<ExpenseJpaEntity, UU
             where expense.deletedAt is null
               and event.group.id = :groupId
               and expense.expenseDate between :from and :to
-              and (:eventId is null or event.id = :eventId)
-              and (:category is null or lower(expense.category) = lower(:category))
-              and (
-                    :userId is null
-                    or exists (
-                        select participant.id
-                        from ExpenseParticipantJpaEntity participant
-                        where participant.expense = expense
-                          and participant.user.id = :userId
-                    )
-                    or exists (
-                        select payer.id
-                        from ExpensePayerJpaEntity payer
-                        where payer.expense = expense
-                          and payer.user.id = :userId
-                    )
-              )
             order by expense.expenseDate asc, expense.description asc
             """)
-    List<ExpenseJpaEntity> findSummaryCandidates(
+    List<ExpenseJpaEntity> findSummaryCandidatesByGroup(
             @Param("groupId") UUID groupId,
             @Param("from") LocalDate from,
-            @Param("to") LocalDate to,
-            @Param("category") String category,
+            @Param("to") LocalDate to
+    );
+
+    @Query("""
+            select distinct expense
+            from ExpenseJpaEntity expense
+            join fetch expense.payer
+            join fetch expense.createdBy
+            left join fetch expense.month
+            join fetch expense.event event
+            left join fetch expense.sourceEvent
+            left join fetch expense.installmentGroup
+            where expense.deletedAt is null
+              and event.group.id = :groupId
+              and event.id = :eventId
+              and expense.expenseDate between :from and :to
+            order by expense.expenseDate asc, expense.description asc
+            """)
+    List<ExpenseJpaEntity> findSummaryCandidatesByGroupAndEvent(
+            @Param("groupId") UUID groupId,
             @Param("eventId") UUID eventId,
-            @Param("userId") UUID userId
+            @Param("from") LocalDate from,
+            @Param("to") LocalDate to
     );
 }
