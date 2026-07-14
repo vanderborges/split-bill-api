@@ -1,5 +1,8 @@
 # Deploy
 
+A URL da API usada pelo `deploy.ps1` e pelo `keep-render-awake.ps1` fica centralizada em
+`deploy.settings.psd1`, na raiz do repositorio `repositorios`. Atualize apenas ali quando a URL mudar.
+
 ## Backend no Render
 
 1. Crie um Postgres no Neon.
@@ -14,9 +17,16 @@ DB_USERNAME=<user>
 DB_PASSWORD=<password>
 AUTH_TOKEN_SECRET=<segredo-grande>
 CORS_ALLOWED_ORIGINS=https://split-bill-f135e.firebaseapp.com
+KEEP_ALIVE_ENABLED=true
 ```
 
 O Flyway cria as tabelas automaticamente na primeira subida.
+
+`KEEP_ALIVE_ENABLED=true` liga um scheduler interno que faz ping em `/health` a cada 10 minutos
+(usando a URL publica `RENDER_EXTERNAL_URL`, que o Render injeta automaticamente) para evitar que o
+plano free hiberne por inatividade. Como este servico foi criado manualmente no Render (nao via
+Blueprint), essa variavel precisa ser adicionada manualmente no dashboard tambem — o `render.yaml`
+sozinho nao atualiza um servico ja existente.
 
 URL da API publicada:
 

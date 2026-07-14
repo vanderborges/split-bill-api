@@ -18,3 +18,5 @@ services:
         generateValue: true
       - key: CORS_ALLOWED_ORIGINS
         sync: false
+      - key: KEEP_ALIVE_ENABLED
+        value: true
