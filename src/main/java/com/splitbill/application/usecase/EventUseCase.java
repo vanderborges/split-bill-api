@@ -261,7 +261,7 @@ public class EventUseCase {
         expense.setAmount(amount);
         expense.setExpenseDate(nextExpenseDate(template, month));
         expense.setCategory(template.getCategory());
-        expense.setPayer(template.getInstallmentGroup().getPayer());
+        expense.setPayer(template.getPayer());
         expense.setCreatedBy(template.getCreatedBy());
         expense.setMonth(month);
         expense.setEvent(targetEvent);
@@ -289,7 +289,7 @@ public class EventUseCase {
         ExpensePayerJpaEntity payer = new ExpensePayerJpaEntity();
         payer.setId(UUID.randomUUID());
         payer.setExpense(expense);
-        payer.setUser(template.getInstallmentGroup().getPayer());
+        payer.setUser(template.getPayer());
         payer.setPaidAmount(amount);
         expense.getPayers().add(payer);
 
