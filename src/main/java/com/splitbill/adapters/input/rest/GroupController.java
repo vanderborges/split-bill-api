@@ -2,8 +2,10 @@ package com.splitbill.adapters.input.rest;
 
 import com.splitbill.application.dto.AddGroupMemberRequest;
 import com.splitbill.application.dto.CreateGroupRequest;
+import com.splitbill.application.dto.GroupInviteResponse;
 import com.splitbill.application.dto.GroupMemberResponse;
 import com.splitbill.application.dto.GroupResponse;
+import com.splitbill.application.usecase.GroupInviteUseCase;
 import com.splitbill.application.usecase.GroupUseCase;
 import com.splitbill.infrastructure.security.CurrentUser;
 import jakarta.validation.Valid;
@@ -26,10 +28,12 @@ import java.util.UUID;
 public class GroupController {
 
     private final GroupUseCase groups;
+    private final GroupInviteUseCase invites;
     private final CurrentUser currentUser;
 
-    public GroupController(GroupUseCase groups, CurrentUser currentUser) {
+    public GroupController(GroupUseCase groups, GroupInviteUseCase invites, CurrentUser currentUser) {
         this.groups = groups;
+        this.invites = invites;
         this.currentUser = currentUser;
     }
 
@@ -73,5 +77,17 @@ public class GroupController {
     @DeleteMapping("/{groupId}")
     public void delete(@PathVariable UUID groupId) {
         groups.delete(groupId, currentUser.id());
+    }
+
+    @PostMapping("/{groupId}/invite")
+    @ResponseStatus(HttpStatus.CREATED)
+    public GroupInviteResponse getOrCreateInvite(@PathVariable UUID groupId) {
+        return invites.getOrCreate(groupId, currentUser.id());
+    }
+
+    @PostMapping("/{groupId}/invite/regenerate")
+    @ResponseStatus(HttpStatus.CREATED)
+    public GroupInviteResponse regenerateInvite(@PathVariable UUID groupId) {
+        return invites.regenerate(groupId, currentUser.id());
     }
 }

@@ -4,7 +4,6 @@ import com.splitbill.application.dto.CreateUserRequest;
 import com.splitbill.application.dto.ChangePasswordRequest;
 import com.splitbill.application.dto.ResetPasswordRequest;
 import com.splitbill.application.dto.UpdateUserRequest;
-import com.splitbill.application.dto.UserOptionResponse;
 import com.splitbill.application.dto.UserResponse;
 import com.splitbill.application.usecase.UserUseCase;
 import jakarta.validation.Valid;
@@ -50,11 +49,6 @@ public class UserController {
             throw new AccessDeniedException("Only admins can list users");
         }
         return users.list();
-    }
-
-    @GetMapping("/options")
-    public List<UserOptionResponse> options() {
-        return users.listOptions();
     }
 
     @GetMapping("/{id}")

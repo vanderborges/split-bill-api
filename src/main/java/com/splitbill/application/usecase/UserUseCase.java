@@ -4,7 +4,6 @@ import com.splitbill.application.dto.CreateUserRequest;
 import com.splitbill.application.dto.ChangePasswordRequest;
 import com.splitbill.application.dto.ResetPasswordRequest;
 import com.splitbill.application.dto.UpdateUserRequest;
-import com.splitbill.application.dto.UserOptionResponse;
 import com.splitbill.application.dto.UserResponse;
 import com.splitbill.domain.exception.DomainException;
 import com.splitbill.infrastructure.persistence.entity.UserJpaEntity;
@@ -33,15 +32,6 @@ public class UserUseCase {
         return users.findAll().stream()
                 .filter(user -> user.getDeletedAt() == null)
                 .map(this::toResponse)
-                .toList();
-    }
-
-    @Transactional(readOnly = true)
-    public List<UserOptionResponse> listOptions() {
-        return users.findAll().stream()
-                .filter(user -> user.getDeletedAt() == null)
-                .filter(UserJpaEntity::isActive)
-                .map(user -> new UserOptionResponse(user.getId(), user.getNickname(), user.isActive()))
                 .toList();
     }
 

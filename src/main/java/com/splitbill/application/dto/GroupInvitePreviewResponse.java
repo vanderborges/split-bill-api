@@ -2,9 +2,10 @@ package com.splitbill.application.dto;
 
 import java.util.UUID;
 
-public record UserOptionResponse(
+public record GroupInvitePreviewResponse(
         UUID id,
-        String nickname,
+        UUID groupId,
+        String groupName,
         boolean active
 ) {
 }
