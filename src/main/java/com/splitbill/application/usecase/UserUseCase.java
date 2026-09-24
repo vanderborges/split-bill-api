@@ -6,7 +6,11 @@ import com.splitbill.application.dto.ResetPasswordRequest;
 import com.splitbill.application.dto.UpdateUserRequest;
 import com.splitbill.application.dto.UserResponse;
 import com.splitbill.domain.exception.DomainException;
+import com.splitbill.domain.valueobject.EventStatus;
+import com.splitbill.infrastructure.persistence.entity.GroupMemberJpaEntity;
 import com.splitbill.infrastructure.persistence.entity.UserJpaEntity;
+import com.splitbill.infrastructure.persistence.repository.ExpenseJpaRepository;
+import com.splitbill.infrastructure.persistence.repository.GroupMemberJpaRepository;
 import com.splitbill.infrastructure.persistence.repository.UserJpaRepository;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -20,10 +24,19 @@ import java.util.UUID;
 public class UserUseCase {
 
     private final UserJpaRepository users;
+    private final ExpenseJpaRepository expenses;
+    private final GroupMemberJpaRepository groupMembers;
     private final PasswordEncoder passwordEncoder;
 
-    public UserUseCase(UserJpaRepository users, PasswordEncoder passwordEncoder) {
+    public UserUseCase(
+            UserJpaRepository users,
+            ExpenseJpaRepository expenses,
+            GroupMemberJpaRepository groupMembers,
+            PasswordEncoder passwordEncoder
+    ) {
         this.users = users;
+        this.expenses = expenses;
+        this.groupMembers = groupMembers;
         this.passwordEncoder = passwordEncoder;
     }
 
@@ -148,11 +161,19 @@ public class UserUseCase {
         if (user.isAdmin() && users.countByAdminTrueAndActiveTrueAndDeletedAtIsNull() <= 1) {
             throw new DomainException("Cannot delete the last active admin");
         }
+        if (expenses.existsByUserInvolvementAndEventStatus(id, EventStatus.OPEN)) {
+            throw new DomainException("Nao e possivel excluir um usuario que participa de um evento em aberto");
+        }
 
         LocalDateTime now = LocalDateTime.now();
         user.setActive(false);
         user.setDeletedAt(now);
         user.setUpdatedAt(now);
+
+        for (GroupMemberJpaEntity membership : groupMembers.findByUserIdAndActiveTrue(id)) {
+            membership.setActive(false);
+            membership.setUpdatedAt(now);
+        }
     }
 
     @Transactional

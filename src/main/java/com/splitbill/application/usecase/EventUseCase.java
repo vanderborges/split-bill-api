@@ -257,7 +257,7 @@ public class EventUseCase {
         LocalDateTime now = LocalDateTime.now();
         ExpenseJpaEntity expense = new ExpenseJpaEntity();
         expense.setId(UUID.randomUUID());
-        expense.setDescription(template.getInstallmentGroup().getDescription() + " " + installmentNumber + "/" + template.getTotalInstallments());
+        expense.setDescription(template.getInstallmentGroup().getDescription());
         expense.setAmount(amount);
         expense.setExpenseDate(nextExpenseDate(template, month));
         expense.setCategory(template.getCategory());

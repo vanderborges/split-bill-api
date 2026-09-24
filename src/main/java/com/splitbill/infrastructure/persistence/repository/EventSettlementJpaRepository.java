@@ -1,5 +1,7 @@
 package com.splitbill.infrastructure.persistence.repository;
 
+import com.splitbill.domain.valueobject.SettlementRole;
+import com.splitbill.domain.valueobject.SettlementStatus;
 import com.splitbill.infrastructure.persistence.entity.EventSettlementJpaEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
 
@@ -12,4 +14,6 @@ public interface EventSettlementJpaRepository extends JpaRepository<EventSettlem
     List<EventSettlementJpaEntity> findByEventId(UUID eventId);
 
     Optional<EventSettlementJpaEntity> findByEventIdAndUserId(UUID eventId, UUID userId);
+
+    boolean existsByUserIdAndRoleAndStatus(UUID userId, SettlementRole role, SettlementStatus status);
 }

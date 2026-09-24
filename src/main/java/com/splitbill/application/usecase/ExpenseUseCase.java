@@ -199,8 +199,7 @@ public class ExpenseUseCase {
         expense.setCreatedAt(now);
         expense.setUpdatedAt(now);
 
-        String description = request.description() + " 1/" + request.installments();
-        fillExpense(expense, request, description, request.amount(), 1, request.installments());
+        fillExpense(expense, request, request.description(), request.amount(), 1, request.installments());
         return toResponse(expenses.save(expense));
     }
 

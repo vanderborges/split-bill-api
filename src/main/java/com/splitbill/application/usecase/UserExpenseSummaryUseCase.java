@@ -72,7 +72,7 @@ public class UserExpenseSummaryUseCase {
         if (targetUserId != null && !targetUserId.equals(requesterId) && !requesterIsAdmin) {
             throw new DomainException("Members can only view their own expense summary");
         }
-        if (targetUserId != null && !groupMembers.existsByGroupIdAndUserIdAndActiveTrue(groupId, targetUserId)) {
+        if (targetUserId != null && groupMembers.findByGroupIdAndUserId(groupId, targetUserId).isEmpty()) {
             throw new DomainException("User does not belong to this group");
         }
         final UUID selectedUserId = targetUserId;

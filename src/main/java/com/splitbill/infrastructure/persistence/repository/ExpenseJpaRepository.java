@@ -1,5 +1,6 @@
 package com.splitbill.infrastructure.persistence.repository;
 
+import com.splitbill.domain.valueobject.EventStatus;
 import com.splitbill.infrastructure.persistence.entity.ExpenseJpaEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -61,5 +62,19 @@ public interface ExpenseJpaRepository extends JpaRepository<ExpenseJpaEntity, UU
             @Param("eventId") UUID eventId,
             @Param("from") LocalDate from,
             @Param("to") LocalDate to
+    );
+
+    @Query("""
+            select count(expense) > 0
+            from ExpenseJpaEntity expense
+            left join expense.payers payer
+            left join expense.participants participant
+            where expense.deletedAt is null
+              and expense.event.status = :status
+              and (expense.payer.id = :userId or payer.user.id = :userId or participant.user.id = :userId)
+            """)
+    boolean existsByUserInvolvementAndEventStatus(
+            @Param("userId") UUID userId,
+            @Param("status") EventStatus status
     );
 }
