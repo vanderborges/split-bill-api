@@ -132,8 +132,8 @@ public class ExpenseUseCase {
         if (expense.getMonth() != null && expense.getMonth().getStatus() == MonthStatus.CLOSED) {
             throw new DomainException("Cannot edit expense from a closed month");
         }
-        if (expense.getEvent().getStatus() == EventStatus.CLOSED) {
-            throw new DomainException("Cannot edit expense from a closed event");
+        if (expense.getEvent().getStatus() != EventStatus.OPEN) {
+            throw new DomainException("Cannot edit expense from an event that is not open");
         }
         requireExpenseChangePermission(expense, requesterId);
         EventJpaEntity event = resolveEvent(request);
@@ -153,6 +153,9 @@ public class ExpenseUseCase {
                 .orElseThrow(() -> new DomainException("Expense not found"));
         if (expense.getDeletedAt() != null) {
             throw new DomainException("Expense not found");
+        }
+        if (expense.getEvent().getStatus() != EventStatus.OPEN) {
+            throw new DomainException("Cannot delete expense from an event that is not open");
         }
         requireExpenseChangePermission(expense, requesterId);
         expense.setDeletedAt(LocalDateTime.now());
@@ -333,8 +336,8 @@ public class ExpenseUseCase {
     }
 
     private void validateOpen(EventJpaEntity event, MonthJpaEntity month) {
-        if (event.getStatus() == EventStatus.CLOSED) {
-            throw new DomainException("Cannot add expense to a closed event");
+        if (event.getStatus() != EventStatus.OPEN) {
+            throw new DomainException("Cannot add expense to an event that is not open");
         }
         if (month != null && month.getStatus() == MonthStatus.CLOSED) {
             throw new DomainException("Cannot add expense to a closed month");

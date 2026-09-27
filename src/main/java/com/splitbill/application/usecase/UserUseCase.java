@@ -161,7 +161,7 @@ public class UserUseCase {
         if (user.isAdmin() && users.countByAdminTrueAndActiveTrueAndDeletedAtIsNull() <= 1) {
             throw new DomainException("Cannot delete the last active admin");
         }
-        if (expenses.existsByUserInvolvementAndEventStatus(id, EventStatus.OPEN)) {
+        if (expenses.existsByUserInvolvementAndEventStatusNot(id, EventStatus.CLOSED)) {
             throw new DomainException("Nao e possivel excluir um usuario que participa de um evento em aberto");
         }
 

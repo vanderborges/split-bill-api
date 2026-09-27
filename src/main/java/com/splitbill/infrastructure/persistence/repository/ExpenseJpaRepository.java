@@ -70,11 +70,11 @@ public interface ExpenseJpaRepository extends JpaRepository<ExpenseJpaEntity, UU
             left join expense.payers payer
             left join expense.participants participant
             where expense.deletedAt is null
-              and expense.event.status = :status
+              and expense.event.status <> :excludedStatus
               and (expense.payer.id = :userId or payer.user.id = :userId or participant.user.id = :userId)
             """)
-    boolean existsByUserInvolvementAndEventStatus(
+    boolean existsByUserInvolvementAndEventStatusNot(
             @Param("userId") UUID userId,
-            @Param("status") EventStatus status
+            @Param("excludedStatus") EventStatus excludedStatus
     );
 }

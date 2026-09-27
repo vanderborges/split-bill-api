@@ -52,8 +52,11 @@ public class DashboardUseCase {
         }
 
         List<UUID> groupIds = userGroups.stream().map(GroupJpaEntity::getId).toList();
+        // Inclui SETTLING junto com OPEN: o saldo ainda esta pendente de pagamento
+        // ate o evento ser de fato fechado, mesmo que novas despesas ja estejam
+        // congeladas.
         List<EventJpaEntity> openEvents = events.findByGroupIdInAndDeletedAtIsNull(groupIds).stream()
-                .filter(event -> event.getStatus() == EventStatus.OPEN)
+                .filter(event -> event.getStatus() != EventStatus.CLOSED)
                 .toList();
         if (openEvents.isEmpty()) {
             return toResponses(balancesByGroup);

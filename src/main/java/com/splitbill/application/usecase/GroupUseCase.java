@@ -178,7 +178,7 @@ public class GroupUseCase {
 
     private boolean hasPendingBalance(UUID groupId, UUID userId) {
         return events.findByGroupIdAndDeletedAtIsNull(groupId).stream()
-                .filter(event -> event.getStatus() == EventStatus.OPEN)
+                .filter(event -> event.getStatus() != EventStatus.CLOSED)
                 .map(event -> balanceForEvent(event, userId))
                 .anyMatch(balance -> balance.compareTo(java.math.BigDecimal.ZERO) != 0);
     }

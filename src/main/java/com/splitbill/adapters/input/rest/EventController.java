@@ -1,8 +1,8 @@
 package com.splitbill.adapters.input.rest;
 
-import com.splitbill.application.dto.CloseEventRequest;
 import com.splitbill.application.dto.CreateEventRequest;
 import com.splitbill.application.dto.EventResponse;
+import com.splitbill.application.dto.StartSettlementRequest;
 import com.splitbill.application.usecase.EventUseCase;
 import com.splitbill.infrastructure.security.CurrentUser;
 import jakarta.validation.Valid;
@@ -46,9 +46,17 @@ public class EventController {
         return events.create(request, currentUser.id());
     }
 
+    @PutMapping("/{id}/start-settlement")
+    public EventResponse startSettlement(
+            @PathVariable UUID id,
+            @RequestBody(required = false) StartSettlementRequest request
+    ) {
+        return events.startSettlement(id, request, currentUser.id());
+    }
+
     @PutMapping("/{id}/close")
-    public EventResponse close(@PathVariable UUID id, @RequestBody(required = false) CloseEventRequest request) {
-        return events.close(id, request, currentUser.id());
+    public EventResponse close(@PathVariable UUID id) {
+        return events.close(id, currentUser.id());
     }
 
     @PutMapping("/{id}/reopen")

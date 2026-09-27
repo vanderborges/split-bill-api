@@ -72,7 +72,7 @@ public class MonthUseCase {
                 .orElseThrow(() -> new DomainException("Month not found"));
         events.findFirstByMonthIdAndTypeOrderByCreatedAtAsc(month.getId(), EventType.MONTHLY)
                 .ifPresentOrElse(
-                        event -> eventUseCase.close(event.getId(), null, requesterId),
+                        event -> eventUseCase.close(event.getId(), requesterId),
                         () -> {
                             month.setStatus(MonthStatus.CLOSED);
                             month.setClosedAt(LocalDateTime.now());

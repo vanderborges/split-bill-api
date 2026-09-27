@@ -1,13 +1,14 @@
 package com.splitbill.application.usecase;
 
-import com.splitbill.application.dto.CloseEventRequest;
 import com.splitbill.application.dto.CreateEventRequest;
 import com.splitbill.application.dto.EventResponse;
+import com.splitbill.application.dto.StartSettlementRequest;
 import com.splitbill.domain.exception.DomainException;
 import com.splitbill.domain.service.ExpenseSplitCalculator;
 import com.splitbill.domain.valueobject.EventStatus;
 import com.splitbill.domain.valueobject.EventType;
 import com.splitbill.domain.valueobject.MonthStatus;
+import com.splitbill.domain.valueobject.SettlementStatus;
 import com.splitbill.domain.valueobject.ParticipantShare;
 import com.splitbill.domain.valueobject.ParticipantSplit;
 import com.splitbill.infrastructure.persistence.entity.EventJpaEntity;
@@ -56,6 +57,7 @@ public class EventUseCase {
     private final GroupJpaRepository groups;
     private final GroupMemberJpaRepository groupMembers;
     private final GroupUseCase groupRules;
+    private final EventSettlementUseCase settlements;
     private final ExpenseSplitCalculator splitCalculator = new ExpenseSplitCalculator();
 
     public EventUseCase(
@@ -66,7 +68,8 @@ public class EventUseCase {
             MonthlyReportUseCase reports,
             GroupJpaRepository groups,
             GroupMemberJpaRepository groupMembers,
-            GroupUseCase groupRules
+            GroupUseCase groupRules,
+            EventSettlementUseCase settlements
     ) {
         this.events = events;
         this.months = months;
@@ -76,6 +79,7 @@ public class EventUseCase {
         this.groups = groups;
         this.groupMembers = groupMembers;
         this.groupRules = groupRules;
+        this.settlements = settlements;
     }
 
     @Transactional(readOnly = true)
@@ -154,20 +158,27 @@ public class EventUseCase {
                 });
     }
 
+    /**
+     * Primeira etapa do fechamento: congela o evento para novas despesas e
+     * dispara os efeitos que dependem da lista final de despesas (rolar a
+     * próxima parcela mensal, consolidar saldo em outro evento). A partir
+     * daqui o evento fica em {@link EventStatus#SETTLING}, aguardando todo
+     * mundo confirmar pagamento antes do fechamento definitivo.
+     */
     @Transactional
-    public EventResponse close(UUID id, CloseEventRequest request, UUID requesterId) {
+    public EventResponse startSettlement(UUID id, StartSettlementRequest request, UUID requesterId) {
         EventJpaEntity event = events.findById(id)
                 .orElseThrow(() -> new DomainException("Event not found"));
         groupRules.requireAdmin(event.getGroup().getId(), requesterId);
-        if (event.getStatus() == EventStatus.CLOSED) {
-            throw new DomainException("Event is already closed");
+        if (event.getStatus() != EventStatus.OPEN) {
+            throw new DomainException("Only an open event can start settlement");
         }
 
         if (request != null && request.consolidateToEventId() != null) {
             EventJpaEntity target = events.findById(request.consolidateToEventId())
                     .orElseThrow(() -> new DomainException("Target event not found"));
-            if (target.getStatus() == EventStatus.CLOSED) {
-                throw new DomainException("Cannot consolidate into a closed event");
+            if (target.getStatus() != EventStatus.OPEN) {
+                throw new DomainException("Cannot consolidate into an event that is not open");
             }
             if (target.getId().equals(event.getId())) {
                 throw new DomainException("Cannot consolidate event into itself");
@@ -180,6 +191,33 @@ public class EventUseCase {
 
         if (event.getType() == EventType.MONTHLY && event.getMonth() != null) {
             ensureFutureInstallments(event);
+        }
+
+        event.setStatus(EventStatus.SETTLING);
+        return toResponse(event);
+    }
+
+    /**
+     * Fechamento definitivo: só é permitido depois que o evento passou por
+     * {@link #startSettlement} e todos os acertos (pagamentos) já foram
+     * confirmados - nada de pendência em aberto na tela de acertos.
+     */
+    @Transactional
+    public EventResponse close(UUID id, UUID requesterId) {
+        EventJpaEntity event = events.findById(id)
+                .orElseThrow(() -> new DomainException("Event not found"));
+        groupRules.requireAdmin(event.getGroup().getId(), requesterId);
+        if (event.getStatus() == EventStatus.CLOSED) {
+            throw new DomainException("Event is already closed");
+        }
+        if (event.getStatus() != EventStatus.SETTLING) {
+            throw new DomainException("Abra o evento para pagamento antes de fechar");
+        }
+        boolean hasPendingPayment = settlements.listByEvent(id, requesterId).stream()
+                .anyMatch(settlement -> settlement.status() == SettlementStatus.PENDING);
+        if (hasPendingPayment) {
+            throw new DomainException(
+                    "Existem pagamentos pendentes. Confirme todos os pagamentos antes de fechar o evento.");
         }
 
         event.setStatus(EventStatus.CLOSED);
