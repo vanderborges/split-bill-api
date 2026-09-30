@@ -17,6 +17,8 @@ public record EventResponse(
         Integer month,
         Integer year,
         LocalDateTime createdAt,
-        LocalDateTime closedAt
+        LocalDateTime closedAt,
+        UUID receiverUserId,
+        String receiverNickname
 ) {
 }

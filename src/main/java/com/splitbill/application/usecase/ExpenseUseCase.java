@@ -100,6 +100,11 @@ public class ExpenseUseCase {
         MonthJpaEntity month = resolveMonth(request, event);
         validateOpen(event, month);
 
+        if (Boolean.TRUE.equals(request.subscription())) {
+            validateMonthlyInstallmentEvent(event);
+            return createSubscription(request, event, month, requesterId);
+        }
+
         if (request.installments() != null && request.installments() > 1) {
             validateMonthlyInstallmentEvent(event);
             return createInstallments(request, event, month, requesterId);
@@ -161,6 +166,30 @@ public class ExpenseUseCase {
         expense.setDeletedAt(LocalDateTime.now());
     }
 
+    /**
+     * Finaliza uma assinatura: admin ou quem cadastrou pode encerrar a
+     * partir do mes corrente. A despesa deste mes continua existindo -
+     * so para de gerar a proxima, no {@link EventUseCase#startSettlement}
+     * do evento atual (ver EventUseCase#ensureFutureInstallments).
+     */
+    @Transactional
+    public ExpenseResponse cancelSubscription(UUID id, UUID requesterId) {
+        ExpenseJpaEntity expense = expenses.findById(id)
+                .orElseThrow(() -> new DomainException("Expense not found"));
+        if (expense.getDeletedAt() != null) {
+            throw new DomainException("Expense not found");
+        }
+        requireExpenseChangePermission(expense, requesterId);
+        InstallmentGroupJpaEntity group = expense.getInstallmentGroup();
+        if (group == null || !group.isSubscription()) {
+            throw new DomainException("Esta despesa nao e uma assinatura");
+        }
+        if (group.getCancelledAt() == null) {
+            group.setCancelledAt(LocalDateTime.now());
+        }
+        return toResponse(expense);
+    }
+
     private ExpenseResponse createInstallments(
             CreateExpenseRequest request,
             EventJpaEntity firstEvent,
@@ -206,6 +235,58 @@ public class ExpenseUseCase {
         return toResponse(expenses.save(expense));
     }
 
+    /**
+     * Assinatura: igual a uma despesa parcelada, mas sem numero fixo de
+     * parcelas - repete todo mes (via
+     * {@link EventUseCase#ensureFutureInstallments}) ate alguem
+     * finalizar com {@link #cancelSubscription}.
+     */
+    private ExpenseResponse createSubscription(
+            CreateExpenseRequest request,
+            EventJpaEntity firstEvent,
+            MonthJpaEntity firstMonth,
+            UUID requesterId
+    ) {
+        if (firstMonth == null) {
+            throw new DomainException("Assinatura deve comecar a partir de um evento mensal");
+        }
+        List<ExpensePayerRequest> payerRequests = normalizePayers(request);
+        if (payerRequests.size() != 1) {
+            throw new DomainException("Assinatura atualmente so permite um pagador");
+        }
+        UserJpaEntity payer = users.findById(payerRequests.get(0).userId())
+                .orElseThrow(() -> new DomainException("Payer not found"));
+        UserJpaEntity creator = users.findById(requesterId)
+                .orElseThrow(() -> new DomainException("User not found"));
+
+        LocalDateTime now = LocalDateTime.now();
+        InstallmentGroupJpaEntity group = new InstallmentGroupJpaEntity();
+        group.setId(UUID.randomUUID());
+        group.setDescription(request.description());
+        group.setTotalAmount(request.amount().setScale(2, RoundingMode.HALF_UP));
+        group.setTotalInstallments(null);
+        group.setSubscription(true);
+        group.setFirstEvent(firstEvent);
+        group.setPayer(payer);
+        group.setCategory(request.category());
+        group.setCreatedAt(now);
+        installmentGroups.save(group);
+
+        ExpenseJpaEntity expense = new ExpenseJpaEntity();
+        expense.setId(UUID.randomUUID());
+        expense.setMonth(firstMonth);
+        expense.setEvent(firstEvent);
+        expense.setCreatedBy(creator);
+        expense.setInstallmentGroup(group);
+        expense.setInstallmentNumber(1);
+        expense.setTotalInstallments(null);
+        expense.setCreatedAt(now);
+        expense.setUpdatedAt(now);
+
+        fillExpense(expense, request, request.description(), request.amount(), 1, null);
+        return toResponse(expenses.save(expense));
+    }
+
     private void validateMonthlyInstallmentEvent(EventJpaEntity event) {
         if (event.getType() != EventType.MONTHLY || event.getMonth() == null) {
             throw new DomainException("Parcelamento e permitido apenas para eventos mensais");
@@ -215,6 +296,10 @@ public class ExpenseUseCase {
     private void validateInstallments(CreateExpenseRequest request) {
         if (request.installments() != null && request.installments() < 1) {
             throw new DomainException("Installments must be greater than zero");
+        }
+        if (Boolean.TRUE.equals(request.subscription())
+                && request.installments() != null && request.installments() > 1) {
+            throw new DomainException("Uma despesa nao pode ser assinatura e parcelada ao mesmo tempo");
         }
     }
 
@@ -493,7 +578,9 @@ public class ExpenseUseCase {
                                 participant.getShareCount(),
                                 participant.getShareDescription()
                         ))
-                        .toList()
+                        .toList(),
+                expense.getInstallmentGroup() != null && expense.getInstallmentGroup().isSubscription(),
+                expense.getInstallmentGroup() != null && expense.getInstallmentGroup().getCancelledAt() != null
         );
     }
 }

@@ -52,6 +52,10 @@ public class EventJpaEntity {
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "receiver_user_id")
+    private UserJpaEntity receiver;
+
     public UUID getId() {
         return id;
     }
@@ -130,5 +134,13 @@ public class EventJpaEntity {
 
     public void setDeletedAt(LocalDateTime deletedAt) {
         this.deletedAt = deletedAt;
+    }
+
+    public UserJpaEntity getReceiver() {
+        return receiver;
+    }
+
+    public void setReceiver(UserJpaEntity receiver) {
+        this.receiver = receiver;
     }
 }

@@ -3,6 +3,7 @@ package com.splitbill.application.usecase;
 import com.splitbill.application.dto.BalanceExpenseDetailResponse;
 import com.splitbill.application.dto.MonthlyBalanceResponse;
 import com.splitbill.application.dto.MonthlyReportResponse;
+import com.splitbill.application.dto.PaymentSuggestionResponse;
 import com.splitbill.domain.exception.DomainException;
 import com.splitbill.domain.valueobject.EventStatus;
 import com.splitbill.domain.valueobject.EventType;
@@ -24,11 +25,14 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.HashSet;
+import java.util.Queue;
 import java.util.Set;
 import java.util.UUID;
 
@@ -101,11 +105,79 @@ public class MonthlyReportUseCase {
                 .toList();
     }
 
+    /**
+     * Sugestão de pagamentos (tipo outros apps de divisão de conta): não
+     * muda nada no cálculo de saldo/acerto por trás, é só uma exibição de
+     * "quem paga quanto pra quem" sob demanda. Sem recebedor eleito, casa
+     * devedores com credores minimizando o número de transferências. Com
+     * recebedor eleito ({@link EventJpaEntity#getReceiver}), todo devedor
+     * manda o valor direto pra essa pessoa - ver
+     * {@link EventUseCase#setReceiver}.
+     */
+    @Transactional(readOnly = true)
+    public List<PaymentSuggestionResponse> getPaymentSuggestions(UUID eventId, UUID requesterId) {
+        EventJpaEntity event = events.findById(eventId)
+                .orElseThrow(() -> new DomainException("Event not found"));
+        groupRules.requireMembership(event.getGroup().getId(), requesterId);
+
+        List<MonthlyBalanceResponse> activeBalances = calculateTotals(eventId).values().stream()
+                .filter(BalanceTotals::hasActivity)
+                .map(BalanceTotals::toResponse)
+                .toList();
+
+        UserJpaEntity receiver = event.getReceiver();
+        if (receiver != null) {
+            BigDecimal zero = BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+            return activeBalances.stream()
+                    .filter(balance -> balance.balance().compareTo(zero) < 0
+                            && !balance.userId().equals(receiver.getId()))
+                    .map(balance -> new PaymentSuggestionResponse(
+                            balance.userId(),
+                            balance.nickname(),
+                            receiver.getId(),
+                            receiver.getNickname(),
+                            balance.balance().abs()))
+                    .toList();
+        }
+
+        return matchDebtorsToCreditors(activeBalances);
+    }
+
+    private List<PaymentSuggestionResponse> matchDebtorsToCreditors(List<MonthlyBalanceResponse> balances) {
+        BigDecimal zero = BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+        Queue<CreditSlice> creditors = new ArrayDeque<>(balances.stream()
+                .filter(balance -> balance.balance().compareTo(zero) > 0)
+                .map(balance -> new CreditSlice(balance.userId(), balance.nickname(), balance.balance()))
+                .toList());
+
+        List<PaymentSuggestionResponse> suggestions = new ArrayList<>();
+        for (MonthlyBalanceResponse debtor : balances.stream()
+                .filter(balance -> balance.balance().compareTo(zero) < 0)
+                .toList()) {
+            BigDecimal remaining = debtor.balance().abs();
+            while (remaining.compareTo(zero) > 0 && !creditors.isEmpty()) {
+                CreditSlice creditor = creditors.poll();
+                BigDecimal amount = remaining.min(creditor.amount()).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+                suggestions.add(new PaymentSuggestionResponse(
+                        debtor.userId(), debtor.nickname(), creditor.userId(), creditor.nickname(), amount));
+                remaining = remaining.subtract(amount).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+                BigDecimal leftover = creditor.amount().subtract(amount).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+                if (leftover.compareTo(zero) > 0) {
+                    creditors.add(new CreditSlice(creditor.userId(), creditor.nickname(), leftover));
+                }
+            }
+        }
+        return suggestions;
+    }
+
+    private record CreditSlice(UUID userId, String nickname, BigDecimal amount) {
+    }
+
     @Transactional(readOnly = true)
     public List<BalanceResult> calculateBalances(UUID eventId) {
         return calculateTotals(eventId).values().stream()
+                .filter(BalanceTotals::hasActivity)
                 .map(BalanceTotals::toResult)
-                .filter(balance -> balance.balance().compareTo(BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP)) != 0)
                 .toList();
     }
 
@@ -116,9 +188,14 @@ public class MonthlyReportUseCase {
                 .reduce(BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP), BigDecimal::add)
                 .setScale(MONEY_SCALE, RoundingMode.HALF_UP);
 
+        // So exclui quem nunca participou de nenhuma despesa deste evento
+        // (nem pagou, nem consumiu). Quem participou e a conta zerou
+        // (pagou exatamente o que consumiu) continua aparecendo - o
+        // EventSettlementUseCase ja trata saldo zero como quitado
+        // automaticamente.
         List<MonthlyBalanceResponse> balances = totalsByUser.values().stream()
+                .filter(BalanceTotals::hasActivity)
                 .map(BalanceTotals::toResponse)
-                .filter(balance -> balance.balance().compareTo(BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP)) != 0)
                 .sorted(Comparator.comparing(MonthlyBalanceResponse::nickname))
                 .toList();
 
@@ -252,6 +329,12 @@ public class MonthlyReportUseCase {
 
         private void addPaid(BigDecimal amount) {
             paid = paid.add(amount).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+        }
+
+        /** True se a pessoa pagou ou consumiu algo neste evento - mesmo que o saldo líquido seja zero. */
+        private boolean hasActivity() {
+            BigDecimal zero = BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+            return consumed.compareTo(zero) != 0 || paid.compareTo(zero) != 0;
         }
 
         private void merge(BalanceTotals totals) {

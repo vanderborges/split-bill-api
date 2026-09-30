@@ -20,6 +20,7 @@ public record CreateExpenseRequest(
         List<UUID> participantIds,
         List<ExpenseParticipantRequest> participants,
         List<ExpensePayerRequest> payers,
-        Integer installments
+        Integer installments,
+        Boolean subscription
 ) {
 }

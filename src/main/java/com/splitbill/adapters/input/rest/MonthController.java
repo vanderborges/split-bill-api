@@ -38,7 +38,7 @@ public class MonthController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public MonthResponse create(@Valid @RequestBody CreateMonthRequest request) {
-        return months.create(request);
+        return months.create(request, currentUser.id());
     }
 
     @PutMapping("/{id}/close")

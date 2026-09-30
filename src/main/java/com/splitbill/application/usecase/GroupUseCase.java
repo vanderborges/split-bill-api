@@ -4,6 +4,7 @@ import com.splitbill.application.dto.AddGroupMemberRequest;
 import com.splitbill.application.dto.CreateGroupRequest;
 import com.splitbill.application.dto.GroupMemberResponse;
 import com.splitbill.application.dto.GroupResponse;
+import com.splitbill.application.dto.UpdateGroupRequest;
 import com.splitbill.domain.exception.DomainException;
 import com.splitbill.domain.valueobject.GroupMemberRole;
 import com.splitbill.infrastructure.persistence.entity.GroupJpaEntity;
@@ -80,6 +81,17 @@ public class GroupUseCase {
         members.save(member);
 
         return toResponse(savedGroup);
+    }
+
+    @Transactional
+    public GroupResponse update(UUID groupId, UpdateGroupRequest request, UUID requesterId) {
+        requireAdmin(groupId, requesterId);
+        GroupJpaEntity group = groups.findById(groupId)
+                .orElseThrow(() -> new DomainException("Group not found"));
+        group.setName(request.name());
+        group.setDescription(request.description());
+        group.setUpdatedAt(LocalDateTime.now());
+        return toResponse(group);
     }
 
     @Transactional(readOnly = true)

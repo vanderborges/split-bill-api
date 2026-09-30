@@ -1,0 +1,9 @@
+package com.splitbill.application.dto;
+
+import jakarta.validation.constraints.NotBlank;
+
+public record UpdateGroupRequest(
+        @NotBlank String name,
+        String description
+) {
+}

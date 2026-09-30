@@ -62,4 +62,9 @@ public class ExpenseController {
     public void delete(@PathVariable UUID id) {
         expenses.delete(id, currentUser.id());
     }
+
+    @PutMapping("/{id}/cancel-subscription")
+    public ExpenseResponse cancelSubscription(@PathVariable UUID id) {
+        return expenses.cancelSubscription(id, currentUser.id());
+    }
 }

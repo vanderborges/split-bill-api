@@ -17,6 +17,7 @@ import com.splitbill.infrastructure.persistence.entity.ExpensePayerJpaEntity;
 import com.splitbill.infrastructure.persistence.entity.ExpenseParticipantJpaEntity;
 import com.splitbill.infrastructure.persistence.entity.GroupJpaEntity;
 import com.splitbill.infrastructure.persistence.entity.GroupMemberJpaEntity;
+import com.splitbill.infrastructure.persistence.entity.InstallmentGroupJpaEntity;
 import com.splitbill.infrastructure.persistence.entity.MonthJpaEntity;
 import com.splitbill.infrastructure.persistence.entity.UserJpaEntity;
 import com.splitbill.infrastructure.persistence.repository.EventJpaRepository;
@@ -236,16 +237,25 @@ public class EventUseCase {
         Set<UUID> processedInstallmentGroups = new HashSet<>();
 
         for (ExpenseJpaEntity eventExpense : eventExpenses) {
-            UUID installmentGroupId = eventExpense.getInstallmentGroup().getId();
+            InstallmentGroupJpaEntity installmentGroup = eventExpense.getInstallmentGroup();
+            UUID installmentGroupId = installmentGroup.getId();
             if (!processedInstallmentGroups.add(installmentGroupId)) {
                 continue;
             }
-            if (eventExpense.getInstallmentNumber() == null || eventExpense.getTotalInstallments() == null) {
+            if (eventExpense.getInstallmentNumber() == null) {
                 continue;
             }
-
             int nextInstallmentNumber = eventExpense.getInstallmentNumber() + 1;
-            if (nextInstallmentNumber > eventExpense.getTotalInstallments()) {
+
+            // Assinatura: sem numero fixo de parcelas, so para quando alguem
+            // cancela (ver ExpenseUseCase#cancelSubscription). Parcelamento
+            // comum: para quando atinge o total contratado.
+            if (installmentGroup.isSubscription()) {
+                if (installmentGroup.getCancelledAt() != null) {
+                    continue;
+                }
+            } else if (eventExpense.getTotalInstallments() == null
+                    || nextInstallmentNumber > eventExpense.getTotalInstallments()) {
                 continue;
             }
 
@@ -361,6 +371,31 @@ public class EventUseCase {
         event.setDeletedAt(LocalDateTime.now());
     }
 
+    /**
+     * Eleger recebedor: todo devedor passa a ter como sugestão de pagamento
+     * mandar o valor direto pra essa pessoa, em vez do acerto "quem deve
+     * pra quem" calculado normalmente - ver
+     * {@link MonthlyReportUseCase#getPaymentSuggestions}. Passar
+     * {@code receiverUserId} null remove o recebedor eleito.
+     */
+    @Transactional
+    public EventResponse setReceiver(UUID id, UUID receiverUserId, UUID requesterId) {
+        EventJpaEntity event = events.findById(id)
+                .orElseThrow(() -> new DomainException("Event not found"));
+        groupRules.requireAdmin(event.getGroup().getId(), requesterId);
+        if (receiverUserId == null) {
+            event.setReceiver(null);
+            return toResponse(event);
+        }
+        if (!groupMembers.existsByGroupIdAndUserIdAndActiveTrue(event.getGroup().getId(), receiverUserId)) {
+            throw new DomainException("Receiver must be an active member of the event's group");
+        }
+        UserJpaEntity receiver = users.findById(receiverUserId)
+                .orElseThrow(() -> new DomainException("User not found"));
+        event.setReceiver(receiver);
+        return toResponse(event);
+    }
+
     @Transactional
     public EventJpaEntity ensureMonthlyEvent(MonthJpaEntity month, GroupJpaEntity group) {
         return events.findByMonthIdAndTypeAndGroupId(month.getId(), EventType.MONTHLY, group.getId())
@@ -464,7 +499,9 @@ public class EventUseCase {
                 month == null ? null : month.getMonth(),
                 month == null ? null : month.getYear(),
                 event.getCreatedAt(),
-                event.getClosedAt()
+                event.getClosedAt(),
+                event.getReceiver() == null ? null : event.getReceiver().getId(),
+                event.getReceiver() == null ? null : event.getReceiver().getNickname()
         );
     }
 

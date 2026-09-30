@@ -190,7 +190,9 @@ public class UserExpenseSummaryUseCase {
                 expense.getInstallmentNumber(),
                 expense.getTotalInstallments(),
                 Collections.emptyList(),
-                Collections.emptyList()
+                Collections.emptyList(),
+                expense.getInstallmentGroup() != null && expense.getInstallmentGroup().isSubscription(),
+                expense.getInstallmentGroup() != null && expense.getInstallmentGroup().getCancelledAt() != null
         );
     }
 }

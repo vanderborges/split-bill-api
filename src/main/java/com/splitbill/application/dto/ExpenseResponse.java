@@ -21,6 +21,8 @@ public record ExpenseResponse(
         Integer installmentNumber,
         Integer totalInstallments,
         List<ExpensePayerResponse> payers,
-        List<ExpenseParticipantResponse> participants
+        List<ExpenseParticipantResponse> participants,
+        boolean isSubscription,
+        boolean subscriptionCancelled
 ) {
 }

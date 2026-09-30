@@ -2,6 +2,7 @@ package com.splitbill.adapters.input.rest;
 
 import com.splitbill.application.dto.BalanceExpenseDetailResponse;
 import com.splitbill.application.dto.MonthlyReportResponse;
+import com.splitbill.application.dto.PaymentSuggestionResponse;
 import com.splitbill.application.usecase.MonthlyReportUseCase;
 import com.splitbill.infrastructure.security.CurrentUser;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -40,5 +41,10 @@ public class MonthlyReportController {
             @PathVariable UUID userId
     ) {
         return reports.getBalanceDetails(eventId, userId, currentUser.id());
+    }
+
+    @GetMapping("/events/{eventId}/payment-suggestions")
+    public List<PaymentSuggestionResponse> getPaymentSuggestions(@PathVariable UUID eventId) {
+        return reports.getPaymentSuggestions(eventId, currentUser.id());
     }
 }

@@ -25,8 +25,12 @@ public class InstallmentGroupJpaEntity {
     @Column(name = "total_amount", nullable = false)
     private BigDecimal totalAmount;
 
-    @Column(name = "total_installments", nullable = false)
-    private int totalInstallments;
+    @Column(name = "total_installments")
+    private Integer totalInstallments;
+
+    /** Assinatura: sem numero fixo de parcelas, repete todo mes ate ser cancelada (ver cancelledAt). */
+    @Column(name = "is_subscription", nullable = false)
+    private boolean subscription;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "first_event_id", nullable = false)
@@ -69,12 +73,20 @@ public class InstallmentGroupJpaEntity {
         this.totalAmount = totalAmount;
     }
 
-    public int getTotalInstallments() {
+    public Integer getTotalInstallments() {
         return totalInstallments;
     }
 
-    public void setTotalInstallments(int totalInstallments) {
+    public void setTotalInstallments(Integer totalInstallments) {
         this.totalInstallments = totalInstallments;
+    }
+
+    public boolean isSubscription() {
+        return subscription;
+    }
+
+    public void setSubscription(boolean subscription) {
+        this.subscription = subscription;
     }
 
     public EventJpaEntity getFirstEvent() {

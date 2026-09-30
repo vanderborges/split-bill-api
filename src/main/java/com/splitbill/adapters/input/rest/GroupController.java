@@ -5,6 +5,7 @@ import com.splitbill.application.dto.CreateGroupRequest;
 import com.splitbill.application.dto.GroupInviteResponse;
 import com.splitbill.application.dto.GroupMemberResponse;
 import com.splitbill.application.dto.GroupResponse;
+import com.splitbill.application.dto.UpdateGroupRequest;
 import com.splitbill.application.usecase.GroupInviteUseCase;
 import com.splitbill.application.usecase.GroupUseCase;
 import com.splitbill.infrastructure.security.CurrentUser;
@@ -14,6 +15,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -46,6 +48,14 @@ public class GroupController {
     @ResponseStatus(HttpStatus.CREATED)
     public GroupResponse create(@Valid @RequestBody CreateGroupRequest request) {
         return groups.create(request, currentUser.id());
+    }
+
+    @PutMapping("/{groupId}")
+    public GroupResponse update(
+            @PathVariable UUID groupId,
+            @Valid @RequestBody UpdateGroupRequest request
+    ) {
+        return groups.update(groupId, request, currentUser.id());
     }
 
     @GetMapping("/{groupId}/members")
