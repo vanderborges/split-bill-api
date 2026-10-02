@@ -38,6 +38,7 @@ import java.util.ArrayDeque;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
@@ -277,21 +278,52 @@ public class EventUseCase {
                             participant.getShareDescription()
                     ))
                     .toList();
-            YearMonth nextReference = YearMonth.of(event.getMonth().getYear(), event.getMonth().getMonth()).plusMonths(1);
-            MonthJpaEntity month = findOrCreateMonth(nextReference.getMonthValue(), nextReference.getYear());
-            EventJpaEntity targetEvent = ensureMonthlyEvent(month, event.getGroup());
+            EventJpaEntity targetEvent = resolveRolloverTarget(event);
             if (targetEvent.getStatus() == EventStatus.CLOSED) {
                 throw new DomainException("Cannot create next installment in a closed monthly event");
             }
             createInstallmentExpense(
                     template,
                     targetEvent,
-                    month,
+                    targetEvent.getMonth(),
                     participants,
                     template.getInstallmentGroup().getTotalAmount(),
                     nextInstallmentNumber
             );
         }
+    }
+
+    /**
+     * Decide pra qual evento mensal rolar a próxima parcela/assinatura. Se
+     * o grupo já tem outro evento mensal aberto (não fechado) num mês
+     * depois do evento atual, usa o mais próximo desses em vez de pular
+     * direto pro mês seguinte - sem isso, fechar um evento mais antigo
+     * (ex.: 09) podia criar um evento novo lá na frente (ex.: 11) mesmo
+     * já existindo um evento mais próximo ainda aberto (ex.: 10), porque
+     * o cálculo original sempre usava "mês do evento atual + 1" sem
+     * checar se já havia algo além disso.
+     */
+    private EventJpaEntity resolveRolloverTarget(EventJpaEntity sourceEvent) {
+        YearMonth sourceReference = YearMonth.of(
+                sourceEvent.getMonth().getYear(), sourceEvent.getMonth().getMonth());
+
+        Optional<EventJpaEntity> existingLater = events
+                .findByGroupIdAndDeletedAtIsNull(sourceEvent.getGroup().getId()).stream()
+                .filter(candidate -> candidate.getType() == EventType.MONTHLY)
+                .filter(candidate -> candidate.getMonth() != null)
+                .filter(candidate -> candidate.getStatus() != EventStatus.CLOSED)
+                .filter(candidate -> !candidate.getId().equals(sourceEvent.getId()))
+                .filter(candidate -> YearMonth.of(candidate.getMonth().getYear(), candidate.getMonth().getMonth())
+                        .isAfter(sourceReference))
+                .min(Comparator.comparing(candidate ->
+                        YearMonth.of(candidate.getMonth().getYear(), candidate.getMonth().getMonth())));
+        if (existingLater.isPresent()) {
+            return existingLater.get();
+        }
+
+        YearMonth nextReference = sourceReference.plusMonths(1);
+        MonthJpaEntity month = findOrCreateMonth(nextReference.getMonthValue(), nextReference.getYear());
+        return ensureMonthlyEvent(month, sourceEvent.getGroup());
     }
 
     private void createInstallmentExpense(
