@@ -40,6 +40,12 @@ public class GroupJpaEntity {
     @JoinColumn(name = "receiver_user_id")
     private UserJpaEntity receiver;
 
+    // Dia do mes (1-31) em que o grupo abre automaticamente pra pagamento
+    // o(s) evento(s) mensal(is) ainda OPEN e dispara o alerta de cobranca -
+    // null desativa. Ver GroupAutoSettlementScheduler.
+    @Column(name = "auto_settlement_day")
+    private Integer autoSettlementDay;
+
     public UUID getId() {
         return id;
     }
@@ -102,5 +108,13 @@ public class GroupJpaEntity {
 
     public void setReceiver(UserJpaEntity receiver) {
         this.receiver = receiver;
+    }
+
+    public Integer getAutoSettlementDay() {
+        return autoSettlementDay;
+    }
+
+    public void setAutoSettlementDay(Integer autoSettlementDay) {
+        this.autoSettlementDay = autoSettlementDay;
     }
 }

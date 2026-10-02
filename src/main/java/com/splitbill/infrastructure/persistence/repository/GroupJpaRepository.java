@@ -12,4 +12,6 @@ public interface GroupJpaRepository extends JpaRepository<GroupJpaEntity, UUID> 
     List<GroupJpaEntity> findByActiveTrue();
 
     Optional<GroupJpaEntity> findFirstByActiveTrueOrderByCreatedAtAsc();
+
+    List<GroupJpaEntity> findByActiveTrueAndAutoSettlementDayIsNotNull();
 }

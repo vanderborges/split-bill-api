@@ -121,6 +121,26 @@ public class GroupUseCase {
         return toResponse(group);
     }
 
+    /**
+     * Dia do mês (1-31) em que o grupo abre automaticamente pra pagamento
+     * o(s) evento(s) mensal(is) ainda OPEN e dispara o alerta de cobrança -
+     * ver {@link com.splitbill.infrastructure.scheduling.GroupAutoSettlementScheduler}.
+     * {@code day} null desativa. Meses mais curtos que o dia escolhido
+     * (ex.: 31 em fevereiro) disparam no último dia do mês.
+     */
+    @Transactional
+    public GroupResponse setAutoSettlementDay(UUID groupId, Integer day, UUID requesterId) {
+        requireAdmin(groupId, requesterId);
+        if (day != null && (day < 1 || day > 31)) {
+            throw new DomainException("Day must be between 1 and 31");
+        }
+        GroupJpaEntity group = groups.findById(groupId)
+                .orElseThrow(() -> new DomainException("Group not found"));
+        group.setAutoSettlementDay(day);
+        group.setUpdatedAt(LocalDateTime.now());
+        return toResponse(group);
+    }
+
     @Transactional(readOnly = true)
     public List<GroupMemberResponse> listMembers(UUID groupId, UUID viewerUserId) {
         requireMembership(groupId, viewerUserId);
@@ -255,7 +275,8 @@ public class GroupUseCase {
                 group.getCreatedBy().getId(),
                 group.isActive(),
                 group.getReceiver() == null ? null : group.getReceiver().getId(),
-                group.getReceiver() == null ? null : group.getReceiver().getNickname()
+                group.getReceiver() == null ? null : group.getReceiver().getNickname(),
+                group.getAutoSettlementDay()
         );
     }
 

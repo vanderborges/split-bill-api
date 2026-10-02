@@ -9,6 +9,7 @@ public record GroupResponse(
         UUID createdByUserId,
         boolean active,
         UUID receiverUserId,
-        String receiverNickname
+        String receiverNickname,
+        Integer autoSettlementDay
 ) {
 }

@@ -106,8 +106,22 @@ public class NotificationUseCase {
         groupRules.requireAdmin(event.getGroup().getId(), requesterId);
         UserJpaEntity admin = users.findById(requesterId)
                 .orElseThrow(() -> new DomainException("User not found"));
+        return sendBillingAlertCore(event, admin);
+    }
 
-        List<EventSettlementResponse> pending = settlements.listByEvent(eventId, requesterId).stream()
+    /**
+     * Mesma lógica de {@link #sendBillingAlert}, mas sem exigir um admin
+     * fazendo a requisição - usada pelo
+     * {@link com.splitbill.infrastructure.scheduling.GroupAutoSettlementScheduler}
+     * logo depois de abrir o evento pra pagamento automaticamente.
+     * {@code actingAs} só preenche o campo de autoria da notificação (não
+     * aparece pra quem recebe) - usa um admin do grupo como "autor" no
+     * lugar de quem literalmente clicou no botão, já que ninguém clicou.
+     */
+    @Transactional
+    public int sendBillingAlertCore(EventJpaEntity event, UserJpaEntity actingAs) {
+        UUID eventId = event.getId();
+        List<EventSettlementResponse> pending = settlements.listByEvent(eventId, actingAs.getId()).stream()
                 .filter(settlement -> settlement.role() == SettlementRole.DEBTOR
                         && settlement.status() == SettlementStatus.PENDING)
                 .toList();
@@ -115,7 +129,7 @@ public class NotificationUseCase {
             throw new DomainException("Nao ha pagamentos pendentes para cobrar neste evento");
         }
 
-        List<PaymentSuggestionResponse> suggestions = reports.getPaymentSuggestions(eventId, requesterId);
+        List<PaymentSuggestionResponse> suggestions = reports.getPaymentSuggestions(eventId, actingAs.getId());
         // Guardado em UTC explicitamente (ver nota em toResponse) - o app
         // converte pro horário local do aparelho na hora de exibir.
         LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
@@ -131,7 +145,7 @@ public class NotificationUseCase {
             notification.setMessage(billingMessage.text());
             notification.setPixKey(billingMessage.pixKey());
             notification.setReceiverName(billingMessage.receiverName());
-            notification.setCreatedBy(admin);
+            notification.setCreatedBy(actingAs);
             notification.setCreatedAt(now);
             notifications.save(notification);
         }

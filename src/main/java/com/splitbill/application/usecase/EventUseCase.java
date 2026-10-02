@@ -172,6 +172,11 @@ public class EventUseCase {
         EventJpaEntity event = events.findById(id)
                 .orElseThrow(() -> new DomainException("Event not found"));
         groupRules.requireAdmin(event.getGroup().getId(), requesterId);
+        startSettlementCore(event, request);
+        return toResponse(event);
+    }
+
+    private void startSettlementCore(EventJpaEntity event, StartSettlementRequest request) {
         if (event.getStatus() != EventStatus.OPEN) {
             throw new DomainException("Only an open event can start settlement");
         }
@@ -196,7 +201,26 @@ public class EventUseCase {
         }
 
         event.setStatus(EventStatus.SETTLING);
-        return toResponse(event);
+    }
+
+    /**
+     * Usado pelo {@link com.splitbill.infrastructure.scheduling.GroupAutoSettlementScheduler}:
+     * abre pra pagamento todos os eventos mensais ainda OPEN do grupo, sem
+     * exigir um admin fazendo a requisição (é o próprio sistema, no dia
+     * configurado em {@link GroupUseCase#setAutoSettlementDay}). Retorna os
+     * eventos que de fato mudaram de status, pra quem chamou saber em quais
+     * disparar o alerta de cobrança.
+     */
+    @Transactional
+    public List<EventJpaEntity> autoStartSettlementForGroup(GroupJpaEntity group) {
+        List<EventJpaEntity> openMonthlyEvents = events.findByGroupIdAndDeletedAtIsNull(group.getId()).stream()
+                .filter(event -> event.getType() == EventType.MONTHLY)
+                .filter(event -> event.getStatus() == EventStatus.OPEN)
+                .toList();
+        for (EventJpaEntity event : openMonthlyEvents) {
+            startSettlementCore(event, null);
+        }
+        return openMonthlyEvents;
     }
 
     /**
