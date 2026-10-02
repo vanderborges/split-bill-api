@@ -380,11 +380,14 @@ public class EventUseCase {
                     event.setName(String.format("%02d/%d", month.getMonth(), month.getYear()));
                     event.setDescription("Evento mensal criado automaticamente");
                     event.setType(EventType.MONTHLY);
-                    event.setStatus(month.getStatus() == MonthStatus.CLOSED ? EventStatus.CLOSED : EventStatus.OPEN);
+                    // O status do evento e dessa pessoa/grupo so - nao do
+                    // Month compartilhado (ver nota em validateOpen de
+                    // ExpenseUseCase): outro grupo ja ter fechado o mes nao
+                    // pode nascer esse evento ja fechado.
+                    event.setStatus(EventStatus.OPEN);
                     event.setMonth(month);
                     event.setGroup(group);
                     event.setCreatedAt(month.getCreatedAt());
-                    event.setClosedAt(month.getClosedAt());
                     return events.save(event);
                 });
     }

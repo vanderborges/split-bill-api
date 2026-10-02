@@ -98,7 +98,7 @@ public class ExpenseUseCase {
         EventJpaEntity event = resolveEvent(request);
         requireMembership(event.getGroup().getId(), requesterId);
         MonthJpaEntity month = resolveMonth(request, event);
-        validateOpen(event, month);
+        validateOpen(event);
 
         if (Boolean.TRUE.equals(request.subscription())) {
             validateMonthlyInstallmentEvent(event);
@@ -134,9 +134,6 @@ public class ExpenseUseCase {
             throw new DomainException("Expense not found");
         }
         requireMembership(expense.getEvent().getGroup().getId(), requesterId);
-        if (expense.getMonth() != null && expense.getMonth().getStatus() == MonthStatus.CLOSED) {
-            throw new DomainException("Cannot edit expense from a closed month");
-        }
         if (expense.getEvent().getStatus() != EventStatus.OPEN) {
             throw new DomainException("Cannot edit expense from an event that is not open");
         }
@@ -144,7 +141,7 @@ public class ExpenseUseCase {
         EventJpaEntity event = resolveEvent(request);
         requireMembership(event.getGroup().getId(), requesterId);
         MonthJpaEntity month = resolveMonth(request, event);
-        validateOpen(event, month);
+        validateOpen(event);
         expense.setEvent(event);
         expense.setMonth(month);
         fillExpense(expense, request, request.description(), request.amount(), expense.getInstallmentNumber(), expense.getTotalInstallments());
@@ -420,12 +417,9 @@ public class ExpenseUseCase {
         return event.getMonth();
     }
 
-    private void validateOpen(EventJpaEntity event, MonthJpaEntity month) {
+    private void validateOpen(EventJpaEntity event) {
         if (event.getStatus() != EventStatus.OPEN) {
             throw new DomainException("Cannot add expense to an event that is not open");
-        }
-        if (month != null && month.getStatus() == MonthStatus.CLOSED) {
-            throw new DomainException("Cannot add expense to a closed month");
         }
     }
 

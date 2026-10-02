@@ -7,7 +7,6 @@ import com.splitbill.application.dto.PaymentSuggestionResponse;
 import com.splitbill.domain.exception.DomainException;
 import com.splitbill.domain.valueobject.EventStatus;
 import com.splitbill.domain.valueobject.EventType;
-import com.splitbill.domain.valueobject.MonthStatus;
 import com.splitbill.infrastructure.persistence.entity.ExpenseJpaEntity;
 import com.splitbill.infrastructure.persistence.entity.EventJpaEntity;
 import com.splitbill.infrastructure.persistence.entity.GroupJpaEntity;
@@ -296,11 +295,12 @@ public class MonthlyReportUseCase {
         event.setName(String.format("%02d/%d", month.getMonth(), month.getYear()));
         event.setDescription("Evento mensal criado automaticamente");
         event.setType(EventType.MONTHLY);
-        event.setStatus(month.getStatus() == MonthStatus.CLOSED ? EventStatus.CLOSED : EventStatus.OPEN);
+        // Status proprio do evento/grupo, nao do Month compartilhado entre
+        // grupos - ver nota em ExpenseUseCase#validateOpen.
+        event.setStatus(EventStatus.OPEN);
         event.setMonth(month);
         event.setGroup(defaultGroup());
         event.setCreatedAt(month.getCreatedAt());
-        event.setClosedAt(month.getClosedAt());
         return events.save(event);
     }
 
