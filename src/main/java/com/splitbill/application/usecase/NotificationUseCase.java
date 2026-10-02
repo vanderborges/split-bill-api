@@ -75,6 +75,21 @@ public class NotificationUseCase {
         }
     }
 
+    @Transactional
+    public void delete(UUID id, UUID userId) {
+        NotificationJpaEntity notification = notifications.findById(id)
+                .orElseThrow(() -> new DomainException("Notification not found"));
+        if (!notification.getRecipient().getId().equals(userId)) {
+            throw new DomainException("Notification not found");
+        }
+        notifications.delete(notification);
+    }
+
+    @Transactional
+    public void clearAll(UUID userId) {
+        notifications.deleteByRecipientId(userId);
+    }
+
     /**
      * Alerta de cobrança: manda uma notificação personalizada pra quem ainda
      * está devendo (settlement DEBTOR + PENDING) nesse evento, dizendo

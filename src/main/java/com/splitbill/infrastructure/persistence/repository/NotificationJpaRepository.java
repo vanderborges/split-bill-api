@@ -11,4 +11,6 @@ public interface NotificationJpaRepository extends JpaRepository<NotificationJpa
     List<NotificationJpaEntity> findByRecipientIdOrderByCreatedAtDesc(UUID recipientId);
 
     long countByRecipientIdAndReadAtIsNull(UUID recipientId);
+
+    void deleteByRecipientId(UUID recipientId);
 }

@@ -3,6 +3,7 @@ package com.splitbill.adapters.input.rest;
 import com.splitbill.application.dto.NotificationResponse;
 import com.splitbill.application.usecase.NotificationUseCase;
 import com.splitbill.infrastructure.security.CurrentUser;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -38,5 +39,15 @@ public class NotificationController {
     @PutMapping("/{id}/read")
     public void markAsRead(@PathVariable UUID id) {
         notifications.markAsRead(id, currentUser.id());
+    }
+
+    @DeleteMapping("/{id}")
+    public void delete(@PathVariable UUID id) {
+        notifications.delete(id, currentUser.id());
+    }
+
+    @DeleteMapping
+    public void clearAll() {
+        notifications.clearAll(currentUser.id());
     }
 }
