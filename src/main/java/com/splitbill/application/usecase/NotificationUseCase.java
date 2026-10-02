@@ -2,6 +2,7 @@ package com.splitbill.application.usecase;
 
 import com.splitbill.application.dto.EventSettlementResponse;
 import com.splitbill.application.dto.NotificationResponse;
+import com.splitbill.application.dto.PaymentSuggestionResponse;
 import com.splitbill.domain.exception.DomainException;
 import com.splitbill.domain.valueobject.SettlementRole;
 import com.splitbill.domain.valueobject.SettlementStatus;
@@ -14,31 +15,40 @@ import com.splitbill.infrastructure.persistence.repository.UserJpaRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.text.NumberFormat;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 
 @Service
 public class NotificationUseCase {
+
+    private static final Locale PT_BR = Locale.of("pt", "BR");
 
     private final NotificationJpaRepository notifications;
     private final EventJpaRepository events;
     private final UserJpaRepository users;
     private final EventSettlementUseCase settlements;
     private final GroupUseCase groupRules;
+    private final MonthlyReportUseCase reports;
 
     public NotificationUseCase(
             NotificationJpaRepository notifications,
             EventJpaRepository events,
             UserJpaRepository users,
             EventSettlementUseCase settlements,
-            GroupUseCase groupRules
+            GroupUseCase groupRules,
+            MonthlyReportUseCase reports
     ) {
         this.notifications = notifications;
         this.events = events;
         this.users = users;
         this.settlements = settlements;
         this.groupRules = groupRules;
+        this.reports = reports;
     }
 
     @Transactional(readOnly = true)
@@ -61,16 +71,18 @@ public class NotificationUseCase {
             throw new DomainException("Notification not found");
         }
         if (notification.getReadAt() == null) {
-            notification.setReadAt(LocalDateTime.now());
+            notification.setReadAt(LocalDateTime.now(ZoneOffset.UTC));
         }
     }
 
     /**
-     * Alerta de cobrança (Etapa 1): manda uma notificação simples pra quem
-     * ainda está devendo (settlement DEBTOR + PENDING) nesse evento. Mais
-     * pra frente isso evolui pra puxar a chave PIX de quem vai receber
-     * (configurável por evento) e montar a mensagem com ela - por enquanto
-     * é só um aviso genérico.
+     * Alerta de cobrança: manda uma notificação personalizada pra quem ainda
+     * está devendo (settlement DEBTOR + PENDING) nesse evento, dizendo
+     * quanto e pra quem pagar - reaproveita {@link MonthlyReportUseCase#getPaymentSuggestions},
+     * que já resolve tanto o caso de recebedor eleito pro grupo (todo
+     * devedor manda pra essa pessoa) quanto o casamento devedor/credor
+     * padrão (sem recebedor eleito), incluindo chave PIX e nome completo
+     * de quem recebe.
      */
     @Transactional
     public int sendBillingAlert(UUID eventId, UUID requesterId) {
@@ -88,9 +100,10 @@ public class NotificationUseCase {
             throw new DomainException("Nao ha pagamentos pendentes para cobrar neste evento");
         }
 
-        String message = "Dividi Ai, o Evento " + event.getName()
-                + " esta com pagamento aberto. Por favor, enviar pagamento o quanto antes";
-        LocalDateTime now = LocalDateTime.now();
+        List<PaymentSuggestionResponse> suggestions = reports.getPaymentSuggestions(eventId, requesterId);
+        // Guardado em UTC explicitamente (ver nota em toResponse) - o app
+        // converte pro horário local do aparelho na hora de exibir.
+        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
 
         for (EventSettlementResponse settlement : pending) {
             UserJpaEntity recipient = users.findById(settlement.userId())
@@ -99,13 +112,53 @@ public class NotificationUseCase {
             notification.setId(UUID.randomUUID());
             notification.setRecipient(recipient);
             notification.setEvent(event);
-            notification.setMessage(message);
+            notification.setMessage(buildBillingMessage(event, settlement, suggestions));
             notification.setCreatedBy(admin);
             notification.setCreatedAt(now);
             notifications.save(notification);
         }
 
         return pending.size();
+    }
+
+    private String buildBillingMessage(
+            EventJpaEntity event,
+            EventSettlementResponse settlement,
+            List<PaymentSuggestionResponse> suggestions
+    ) {
+        List<PaymentSuggestionResponse> targets = suggestions.stream()
+                .filter(suggestion -> suggestion.fromUserId().equals(settlement.userId()))
+                .toList();
+
+        StringBuilder message = new StringBuilder("DividiAí: no evento ")
+                .append(event.getName())
+                .append(" você tem ")
+                .append(formatCurrency(settlement.amount()))
+                .append(" pendente. ");
+
+        if (targets.isEmpty()) {
+            message.append("Combine com o grupo pra quem enviar o pagamento.");
+            return message.toString();
+        }
+
+        List<String> parts = new ArrayList<>();
+        for (PaymentSuggestionResponse target : targets) {
+            UserJpaEntity receiver = users.findById(target.toUserId())
+                    .orElseThrow(() -> new DomainException("User not found"));
+            String pixKey = receiver.getPixKey();
+            String part = "envie " + formatCurrency(target.amount()) + " para " + receiver.getFullName();
+            if (pixKey != null && !pixKey.isBlank()) {
+                part += " (PIX: " + pixKey + ")";
+            }
+            parts.add(part);
+        }
+        message.append(String.join("; ", parts)).append(".");
+        return message.toString();
+    }
+
+    private String formatCurrency(java.math.BigDecimal amount) {
+        NumberFormat currencyFormat = NumberFormat.getCurrencyInstance(PT_BR);
+        return currencyFormat.format(amount).replace(' ', ' ');
     }
 
     private NotificationResponse toResponse(NotificationJpaEntity notification) {
@@ -115,8 +168,18 @@ public class NotificationUseCase {
                 event == null ? null : event.getId(),
                 event == null ? null : event.getName(),
                 notification.getMessage(),
-                notification.getCreatedAt(),
-                notification.getReadAt()
+                // createdAt/readAt sao gravados como LocalDateTime em UTC
+                // (ver sendBillingAlert) mas sem marcacao explicita de fuso -
+                // convertemos pra Instant aqui so na resposta, pra o app
+                // (que interpreta string sem fuso como hora local) exibir
+                // certo em qualquer fuso do aparelho, nao so no de quem
+                // disparou o alerta.
+                notification.getCreatedAt() == null
+                        ? null
+                        : notification.getCreatedAt().toInstant(ZoneOffset.UTC),
+                notification.getReadAt() == null
+                        ? null
+                        : notification.getReadAt().toInstant(ZoneOffset.UTC)
         );
     }
 }

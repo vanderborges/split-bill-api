@@ -1,6 +1,6 @@
 package com.splitbill.application.dto;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 public record NotificationResponse(
@@ -8,7 +8,7 @@ public record NotificationResponse(
         UUID eventId,
         String eventName,
         String message,
-        LocalDateTime createdAt,
-        LocalDateTime readAt
+        Instant createdAt,
+        Instant readAt
 ) {
 }
