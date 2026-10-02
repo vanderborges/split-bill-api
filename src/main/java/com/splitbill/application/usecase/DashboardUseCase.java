@@ -46,10 +46,13 @@ public class DashboardUseCase {
      * número por grupo - confuso quando um grupo tem mais de um evento
      * aberto ao mesmo tempo (ex.: dois meses, ou um mês + um evento
      * avulso), porque o número combinado escondia o que estava
-     * acontecendo em cada evento. Agora retorna, por grupo, a lista dos
-     * eventos em que a pessoa realmente tem despesa (pagou ou consumiu
-     * algo), cada um com o próprio saldo - a tela decide como agrupar
-     * visualmente.
+     * acontecendo em cada evento. Agora retorna, por grupo, a lista de
+     * todos os eventos ativos (OPEN/SETTLING) do grupo, cada um com o
+     * saldo da pessoa naquele evento - a tela decide como agrupar
+     * visualmente. O saldo pode ser zero quando a pessoa ainda nao
+     * lancou nada naquele evento especifico; isso nao e motivo pra
+     * esconder o evento, já que ele existe e aparece normalmente na tela
+     * de Eventos.
      */
     @Transactional(readOnly = true)
     public List<DashboardGroupBalanceResponse> getGroupBalances(UUID userId) {
@@ -89,8 +92,7 @@ public class DashboardUseCase {
         }
 
         Map<UUID, List<EventBalance>> eventBalancesByGroupId = new LinkedHashMap<>();
-        balanceByEventId.values().stream()
-                .filter(EventBalance::hasActivity)
+        balanceByEventId.values()
                 .forEach(eventBalance -> eventBalancesByGroupId
                         .computeIfAbsent(eventBalance.event.getGroup().getId(), ignored -> new ArrayList<>())
                         .add(eventBalance));
@@ -122,11 +124,6 @@ public class DashboardUseCase {
 
         private void addPaid(BigDecimal amount) {
             paid = paid.add(amount).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
-        }
-
-        private boolean hasActivity() {
-            BigDecimal zero = BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
-            return consumed.compareTo(zero) != 0 || paid.compareTo(zero) != 0;
         }
 
         private DashboardEventBalanceResponse toResponse() {
