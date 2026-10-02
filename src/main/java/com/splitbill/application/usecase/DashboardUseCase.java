@@ -1,5 +1,6 @@
 package com.splitbill.application.usecase;
 
+import com.splitbill.application.dto.DashboardEventBalanceResponse;
 import com.splitbill.application.dto.DashboardGroupBalanceResponse;
 import com.splitbill.domain.valueobject.EventStatus;
 import com.splitbill.infrastructure.persistence.entity.EventJpaEntity;
@@ -14,6 +15,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -38,15 +41,22 @@ public class DashboardUseCase {
         this.expenses = expenses;
     }
 
+    /**
+     * Antes isso somava o saldo de todos os eventos em aberto num único
+     * número por grupo - confuso quando um grupo tem mais de um evento
+     * aberto ao mesmo tempo (ex.: dois meses, ou um mês + um evento
+     * avulso), porque o número combinado escondia o que estava
+     * acontecendo em cada evento. Agora retorna, por grupo, a lista dos
+     * eventos em que a pessoa realmente tem despesa (pagou ou consumiu
+     * algo), cada um com o próprio saldo - a tela decide como agrupar
+     * visualmente.
+     */
     @Transactional(readOnly = true)
     public List<DashboardGroupBalanceResponse> getGroupBalances(UUID userId) {
         List<GroupJpaEntity> userGroups = groupMembers.findByUserIdAndActiveTrue(userId).stream()
                 .map(GroupMemberJpaEntity::getGroup)
-                .filter(group -> group.isActive())
+                .filter(GroupJpaEntity::isActive)
                 .toList();
-
-        Map<UUID, GroupBalance> balancesByGroup = new LinkedHashMap<>();
-        userGroups.forEach(group -> balancesByGroup.put(group.getId(), new GroupBalance(group)));
         if (userGroups.isEmpty()) {
             return List.of();
         }
@@ -55,49 +65,55 @@ public class DashboardUseCase {
         // Inclui SETTLING junto com OPEN: o saldo ainda esta pendente de pagamento
         // ate o evento ser de fato fechado, mesmo que novas despesas ja estejam
         // congeladas.
-        List<EventJpaEntity> openEvents = events.findByGroupIdInAndDeletedAtIsNull(groupIds).stream()
+        List<EventJpaEntity> activeEvents = events.findByGroupIdInAndDeletedAtIsNull(groupIds).stream()
                 .filter(event -> event.getStatus() != EventStatus.CLOSED)
                 .toList();
-        if (openEvents.isEmpty()) {
-            return toResponses(balancesByGroup);
-        }
 
-        Map<UUID, UUID> groupIdByEventId = new LinkedHashMap<>();
-        openEvents.forEach(event -> groupIdByEventId.put(event.getId(), event.getGroup().getId()));
+        Map<UUID, EventBalance> balanceByEventId = new LinkedHashMap<>();
+        activeEvents.forEach(event -> balanceByEventId.put(event.getId(), new EventBalance(event)));
 
-        List<UUID> eventIds = openEvents.stream().map(EventJpaEntity::getId).toList();
-        for (ExpenseJpaEntity expense : expenses.findByEventIdInAndDeletedAtIsNull(eventIds)) {
-            UUID groupId = groupIdByEventId.get(expense.getEvent().getId());
-            GroupBalance groupBalance = balancesByGroup.get(groupId);
-            if (groupBalance == null) {
-                continue;
+        if (!activeEvents.isEmpty()) {
+            List<UUID> eventIds = activeEvents.stream().map(EventJpaEntity::getId).toList();
+            for (ExpenseJpaEntity expense : expenses.findByEventIdInAndDeletedAtIsNull(eventIds)) {
+                EventBalance eventBalance = balanceByEventId.get(expense.getEvent().getId());
+                if (eventBalance == null) {
+                    continue;
+                }
+                expense.getParticipants().stream()
+                        .filter(participant -> participant.getUser().getId().equals(userId))
+                        .forEach(participant -> eventBalance.addConsumed(participant.getShareAmount()));
+                expense.getPayers().stream()
+                        .filter(payer -> payer.getUser().getId().equals(userId))
+                        .forEach(payer -> eventBalance.addPaid(payer.getPaidAmount()));
             }
-
-            expense.getParticipants().stream()
-                    .filter(participant -> participant.getUser().getId().equals(userId))
-                    .forEach(participant -> groupBalance.addConsumed(participant.getShareAmount()));
-
-            expense.getPayers().stream()
-                    .filter(payer -> payer.getUser().getId().equals(userId))
-                    .forEach(payer -> groupBalance.addPaid(payer.getPaidAmount()));
         }
 
-        return toResponses(balancesByGroup);
-    }
+        Map<UUID, List<EventBalance>> eventBalancesByGroupId = new LinkedHashMap<>();
+        balanceByEventId.values().stream()
+                .filter(EventBalance::hasActivity)
+                .forEach(eventBalance -> eventBalancesByGroupId
+                        .computeIfAbsent(eventBalance.event.getGroup().getId(), ignored -> new ArrayList<>())
+                        .add(eventBalance));
 
-    private List<DashboardGroupBalanceResponse> toResponses(Map<UUID, GroupBalance> balancesByGroup) {
-        return balancesByGroup.values().stream()
-                .map(GroupBalance::toResponse)
+        return userGroups.stream()
+                .map(group -> new DashboardGroupBalanceResponse(
+                        group.getId(),
+                        group.getName(),
+                        eventBalancesByGroupId.getOrDefault(group.getId(), List.of()).stream()
+                                .sorted(Comparator.comparing(eventBalance -> eventBalance.event.getCreatedAt()))
+                                .map(EventBalance::toResponse)
+                                .toList()
+                ))
                 .toList();
     }
 
-    private static final class GroupBalance {
-        private final GroupJpaEntity group;
+    private static final class EventBalance {
+        private final EventJpaEntity event;
         private BigDecimal consumed = BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
         private BigDecimal paid = BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
 
-        private GroupBalance(GroupJpaEntity group) {
-            this.group = group;
+        private EventBalance(EventJpaEntity event) {
+            this.event = event;
         }
 
         private void addConsumed(BigDecimal amount) {
@@ -108,10 +124,16 @@ public class DashboardUseCase {
             paid = paid.add(amount).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
         }
 
-        private DashboardGroupBalanceResponse toResponse() {
-            return new DashboardGroupBalanceResponse(
-                    group.getId(),
-                    group.getName(),
+        private boolean hasActivity() {
+            BigDecimal zero = BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+            return consumed.compareTo(zero) != 0 || paid.compareTo(zero) != 0;
+        }
+
+        private DashboardEventBalanceResponse toResponse() {
+            return new DashboardEventBalanceResponse(
+                    event.getId(),
+                    event.getName(),
+                    event.getStatus().name(),
                     paid.subtract(consumed).setScale(MONEY_SCALE, RoundingMode.HALF_UP)
             );
         }

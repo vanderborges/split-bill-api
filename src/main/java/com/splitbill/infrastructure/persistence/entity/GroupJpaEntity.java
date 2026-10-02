@@ -36,6 +36,10 @@ public class GroupJpaEntity {
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "receiver_user_id")
+    private UserJpaEntity receiver;
+
     public UUID getId() {
         return id;
     }
@@ -90,5 +94,13 @@ public class GroupJpaEntity {
 
     public void setUpdatedAt(LocalDateTime updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public UserJpaEntity getReceiver() {
+        return receiver;
+    }
+
+    public void setReceiver(UserJpaEntity receiver) {
+        this.receiver = receiver;
     }
 }

@@ -2,7 +2,6 @@ package com.splitbill.adapters.input.rest;
 
 import com.splitbill.application.dto.CreateEventRequest;
 import com.splitbill.application.dto.EventResponse;
-import com.splitbill.application.dto.SetEventReceiverRequest;
 import com.splitbill.application.dto.StartSettlementRequest;
 import com.splitbill.application.usecase.EventUseCase;
 import com.splitbill.application.usecase.NotificationUseCase;
@@ -76,15 +75,6 @@ public class EventController {
     @PostMapping("/{id}/billing-alert")
     public Map<String, Integer> sendBillingAlert(@PathVariable UUID id) {
         return Map.of("recipients", notifications.sendBillingAlert(id, currentUser.id()));
-    }
-
-    @PutMapping("/{id}/receiver")
-    public EventResponse setReceiver(
-            @PathVariable UUID id,
-            @RequestBody(required = false) SetEventReceiverRequest request
-    ) {
-        UUID receiverUserId = request == null ? null : request.userId();
-        return events.setReceiver(id, receiverUserId, currentUser.id());
     }
 
     @DeleteMapping("/{id}")

@@ -580,7 +580,8 @@ public class ExpenseUseCase {
                         ))
                         .toList(),
                 expense.getInstallmentGroup() != null && expense.getInstallmentGroup().isSubscription(),
-                expense.getInstallmentGroup() != null && expense.getInstallmentGroup().getCancelledAt() != null
+                expense.getInstallmentGroup() != null && expense.getInstallmentGroup().getCancelledAt() != null,
+                expense.getCreatedAt()
         );
     }
 }

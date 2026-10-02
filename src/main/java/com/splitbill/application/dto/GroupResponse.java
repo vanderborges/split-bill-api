@@ -7,6 +7,8 @@ public record GroupResponse(
         String name,
         String description,
         UUID createdByUserId,
-        boolean active
+        boolean active,
+        UUID receiverUserId,
+        String receiverNickname
 ) {
 }

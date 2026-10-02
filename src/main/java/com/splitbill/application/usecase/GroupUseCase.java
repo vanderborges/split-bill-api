@@ -94,6 +94,33 @@ public class GroupUseCase {
         return toResponse(group);
     }
 
+    /**
+     * Recebedor padrão do grupo: usado pela sugestão de pagamentos (ver
+     * {@link MonthlyReportUseCase#getPaymentSuggestions}) em todos os
+     * eventos do grupo - todo devedor manda o valor direto pra essa
+     * pessoa, em vez do acerto "quem deve pra quem" calculado
+     * normalmente. {@code receiverUserId} null remove o recebedor.
+     */
+    @Transactional
+    public GroupResponse setReceiver(UUID groupId, UUID receiverUserId, UUID requesterId) {
+        requireAdmin(groupId, requesterId);
+        GroupJpaEntity group = groups.findById(groupId)
+                .orElseThrow(() -> new DomainException("Group not found"));
+        if (receiverUserId == null) {
+            group.setReceiver(null);
+            group.setUpdatedAt(LocalDateTime.now());
+            return toResponse(group);
+        }
+        if (!members.existsByGroupIdAndUserIdAndActiveTrue(groupId, receiverUserId)) {
+            throw new DomainException("Receiver must be an active member of the group");
+        }
+        UserJpaEntity receiver = users.findById(receiverUserId)
+                .orElseThrow(() -> new DomainException("User not found"));
+        group.setReceiver(receiver);
+        group.setUpdatedAt(LocalDateTime.now());
+        return toResponse(group);
+    }
+
     @Transactional(readOnly = true)
     public List<GroupMemberResponse> listMembers(UUID groupId, UUID viewerUserId) {
         requireMembership(groupId, viewerUserId);
@@ -226,7 +253,9 @@ public class GroupUseCase {
                 group.getName(),
                 group.getDescription(),
                 group.getCreatedBy().getId(),
-                group.isActive()
+                group.isActive(),
+                group.getReceiver() == null ? null : group.getReceiver().getId(),
+                group.getReceiver() == null ? null : group.getReceiver().getNickname()
         );
     }
 

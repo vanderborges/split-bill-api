@@ -5,6 +5,7 @@ import com.splitbill.application.dto.CreateGroupRequest;
 import com.splitbill.application.dto.GroupInviteResponse;
 import com.splitbill.application.dto.GroupMemberResponse;
 import com.splitbill.application.dto.GroupResponse;
+import com.splitbill.application.dto.SetGroupReceiverRequest;
 import com.splitbill.application.dto.UpdateGroupRequest;
 import com.splitbill.application.usecase.GroupInviteUseCase;
 import com.splitbill.application.usecase.GroupUseCase;
@@ -56,6 +57,15 @@ public class GroupController {
             @Valid @RequestBody UpdateGroupRequest request
     ) {
         return groups.update(groupId, request, currentUser.id());
+    }
+
+    @PutMapping("/{groupId}/receiver")
+    public GroupResponse setReceiver(
+            @PathVariable UUID groupId,
+            @RequestBody(required = false) SetGroupReceiverRequest request
+    ) {
+        UUID receiverUserId = request == null ? null : request.userId();
+        return groups.setReceiver(groupId, receiverUserId, currentUser.id());
     }
 
     @GetMapping("/{groupId}/members")

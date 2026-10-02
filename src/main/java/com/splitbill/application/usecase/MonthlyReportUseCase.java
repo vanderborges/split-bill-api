@@ -110,9 +110,9 @@ public class MonthlyReportUseCase {
      * muda nada no cálculo de saldo/acerto por trás, é só uma exibição de
      * "quem paga quanto pra quem" sob demanda. Sem recebedor eleito, casa
      * devedores com credores minimizando o número de transferências. Com
-     * recebedor eleito ({@link EventJpaEntity#getReceiver}), todo devedor
+     * recebedor eleito ({@link GroupJpaEntity#getReceiver}), todo devedor
      * manda o valor direto pra essa pessoa - ver
-     * {@link EventUseCase#setReceiver}.
+     * {@link GroupUseCase#setReceiver}.
      */
     @Transactional(readOnly = true)
     public List<PaymentSuggestionResponse> getPaymentSuggestions(UUID eventId, UUID requesterId) {
@@ -125,7 +125,7 @@ public class MonthlyReportUseCase {
                 .map(BalanceTotals::toResponse)
                 .toList();
 
-        UserJpaEntity receiver = event.getReceiver();
+        UserJpaEntity receiver = event.getGroup().getReceiver();
         if (receiver != null) {
             BigDecimal zero = BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
             return activeBalances.stream()
