@@ -9,6 +9,8 @@ public record NotificationResponse(
         String eventName,
         String message,
         Instant createdAt,
-        Instant readAt
+        Instant readAt,
+        String pixKey,
+        String receiverName
 ) {
 }

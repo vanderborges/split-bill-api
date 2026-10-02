@@ -108,11 +108,14 @@ public class NotificationUseCase {
         for (EventSettlementResponse settlement : pending) {
             UserJpaEntity recipient = users.findById(settlement.userId())
                     .orElseThrow(() -> new DomainException("User not found"));
+            BillingMessage billingMessage = buildBillingMessage(event, settlement, suggestions);
             NotificationJpaEntity notification = new NotificationJpaEntity();
             notification.setId(UUID.randomUUID());
             notification.setRecipient(recipient);
             notification.setEvent(event);
-            notification.setMessage(buildBillingMessage(event, settlement, suggestions));
+            notification.setMessage(billingMessage.text());
+            notification.setPixKey(billingMessage.pixKey());
+            notification.setReceiverName(billingMessage.receiverName());
             notification.setCreatedBy(admin);
             notification.setCreatedAt(now);
             notifications.save(notification);
@@ -121,7 +124,17 @@ public class NotificationUseCase {
         return pending.size();
     }
 
-    private String buildBillingMessage(
+    /**
+     * Texto da notificação, mais a chave PIX e nome de quem recebe quando
+     * há um único destinatário claro - usados pelo app pra mostrar um
+     * botão de copiar o PIX sem precisar reextrair do texto livre. Com
+     * mais de um destinatário (sem recebedor eleito, casando com vários
+     * credores), não há um único PIX pra copiar, então ficam nulos.
+     */
+    private record BillingMessage(String text, String pixKey, String receiverName) {
+    }
+
+    private BillingMessage buildBillingMessage(
             EventJpaEntity event,
             EventSettlementResponse settlement,
             List<PaymentSuggestionResponse> suggestions
@@ -138,13 +151,15 @@ public class NotificationUseCase {
 
         if (targets.isEmpty()) {
             message.append("Combine com o grupo pra quem enviar o pagamento.");
-            return message.toString();
+            return new BillingMessage(message.toString(), null, null);
         }
 
         List<String> parts = new ArrayList<>();
+        List<UserJpaEntity> receivers = new ArrayList<>();
         for (PaymentSuggestionResponse target : targets) {
             UserJpaEntity receiver = users.findById(target.toUserId())
                     .orElseThrow(() -> new DomainException("User not found"));
+            receivers.add(receiver);
             String pixKey = receiver.getPixKey();
             String part = "envie " + formatCurrency(target.amount()) + " para " + receiver.getFullName();
             if (pixKey != null && !pixKey.isBlank()) {
@@ -153,7 +168,17 @@ public class NotificationUseCase {
             parts.add(part);
         }
         message.append(String.join("; ", parts)).append(".");
-        return message.toString();
+
+        if (receivers.size() == 1) {
+            UserJpaEntity receiver = receivers.get(0);
+            String pixKey = receiver.getPixKey();
+            return new BillingMessage(
+                    message.toString(),
+                    pixKey == null || pixKey.isBlank() ? null : pixKey,
+                    receiver.getFullName()
+            );
+        }
+        return new BillingMessage(message.toString(), null, null);
     }
 
     private String formatCurrency(java.math.BigDecimal amount) {
@@ -179,7 +204,9 @@ public class NotificationUseCase {
                         : notification.getCreatedAt().toInstant(ZoneOffset.UTC),
                 notification.getReadAt() == null
                         ? null
-                        : notification.getReadAt().toInstant(ZoneOffset.UTC)
+                        : notification.getReadAt().toInstant(ZoneOffset.UTC),
+                notification.getPixKey(),
+                notification.getReceiverName()
         );
     }
 }

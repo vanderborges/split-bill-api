@@ -39,6 +39,17 @@ public class NotificationJpaEntity {
     @Column(name = "read_at")
     private LocalDateTime readAt;
 
+    // Chave PIX e nome de quem deve receber o pagamento, pra exibir um
+    // botão de copiar na notificação sem precisar reextrair do texto
+    // livre da mensagem. Nulo quando a notificação não tem um único
+    // destinatário claro (ex.: sem recebedor eleito e com mais de uma
+    // sugestão de pagamento pra essa pessoa).
+    @Column(name = "pix_key")
+    private String pixKey;
+
+    @Column(name = "receiver_name")
+    private String receiverName;
+
     public UUID getId() {
         return id;
     }
@@ -93,5 +104,21 @@ public class NotificationJpaEntity {
 
     public void setReadAt(LocalDateTime readAt) {
         this.readAt = readAt;
+    }
+
+    public String getPixKey() {
+        return pixKey;
+    }
+
+    public void setPixKey(String pixKey) {
+        this.pixKey = pixKey;
+    }
+
+    public String getReceiverName() {
+        return receiverName;
+    }
+
+    public void setReceiverName(String receiverName) {
+        this.receiverName = receiverName;
     }
 }
