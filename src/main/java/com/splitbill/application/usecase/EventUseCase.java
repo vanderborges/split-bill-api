@@ -425,7 +425,13 @@ public class EventUseCase {
         EventJpaEntity event = events.findById(id)
                 .orElseThrow(() -> new DomainException("Event not found"));
         groupRules.requireAdmin(event.getGroup().getId(), adminUserId);
-        event.setDeletedAt(LocalDateTime.now());
+        LocalDateTime now = LocalDateTime.now();
+        event.setDeletedAt(now);
+        // Apaga junto as despesas do evento - sem isso elas continuavam
+        // aparecendo no Extrato (e em qualquer consulta que so filtra
+        // expense.deletedAt), mesmo com o evento ja apagado.
+        expenses.findByEventIdAndDeletedAtIsNull(event.getId())
+                .forEach(expense -> expense.setDeletedAt(now));
     }
 
     @Transactional
