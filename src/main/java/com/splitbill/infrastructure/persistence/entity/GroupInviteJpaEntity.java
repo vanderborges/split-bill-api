@@ -26,6 +26,11 @@ public class GroupInviteJpaEntity {
     @JoinColumn(name = "created_by_user_id", nullable = false)
     private UserJpaEntity createdBy;
 
+    /** Convite temporario (pessoa so para este evento); nulo = convite do grupo. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "event_id")
+    private EventJpaEntity event;
+
     @Column(nullable = false)
     private boolean active;
 
@@ -70,5 +75,13 @@ public class GroupInviteJpaEntity {
 
     public void setCreatedAt(LocalDateTime createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public EventJpaEntity getEvent() {
+        return event;
+    }
+
+    public void setEvent(EventJpaEntity event) {
+        this.event = event;
     }
 }

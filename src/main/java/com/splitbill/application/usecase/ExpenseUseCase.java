@@ -15,6 +15,7 @@ import com.splitbill.domain.valueobject.ParticipantShare;
 import com.splitbill.domain.valueobject.ParticipantSplit;
 import com.splitbill.infrastructure.persistence.entity.EventJpaEntity;
 import com.splitbill.infrastructure.persistence.entity.ExpenseJpaEntity;
+import com.splitbill.infrastructure.persistence.entity.GroupMemberJpaEntity;
 import com.splitbill.infrastructure.persistence.entity.ExpensePayerJpaEntity;
 import com.splitbill.infrastructure.persistence.entity.ExpenseParticipantJpaEntity;
 import com.splitbill.infrastructure.persistence.entity.GroupJpaEntity;
@@ -86,7 +87,7 @@ public class ExpenseUseCase {
     public List<ExpenseResponse> listByEvent(UUID eventId, UUID requesterId) {
         EventJpaEntity event = events.findById(eventId)
                 .orElseThrow(() -> new DomainException("Event not found"));
-        requireMembership(event.getGroup().getId(), requesterId);
+        requireEventAccess(event, requesterId);
         return expenses.findByEventIdAndDeletedAtIsNull(eventId).stream()
                 .map(this::toResponse)
                 .toList();
@@ -96,7 +97,7 @@ public class ExpenseUseCase {
     public ExpenseResponse create(CreateExpenseRequest request, UUID requesterId) {
         validateInstallments(request);
         EventJpaEntity event = resolveEvent(request);
-        requireMembership(event.getGroup().getId(), requesterId);
+        requireEventAccess(event, requesterId);
         MonthJpaEntity month = resolveMonth(request, event);
         validateOpen(event);
 
@@ -133,13 +134,13 @@ public class ExpenseUseCase {
         if (expense.getDeletedAt() != null) {
             throw new DomainException("Expense not found");
         }
-        requireMembership(expense.getEvent().getGroup().getId(), requesterId);
+        requireEventAccess(expense.getEvent(), requesterId);
         if (expense.getEvent().getStatus() != EventStatus.OPEN) {
             throw new DomainException("Cannot edit expense from an event that is not open");
         }
         requireExpenseChangePermission(expense, requesterId);
         EventJpaEntity event = resolveEvent(request);
-        requireMembership(event.getGroup().getId(), requesterId);
+        requireEventAccess(event, requesterId);
         MonthJpaEntity month = resolveMonth(request, event);
         validateOpen(event);
         expense.setEvent(event);
@@ -370,15 +371,23 @@ public class ExpenseUseCase {
 
     private void validateUsersBelongToEventGroup(EventJpaEntity event, List<UUID> userIds) {
         for (UUID userId : userIds) {
-            if (!groupMembers.existsByGroupIdAndUserIdAndActiveTrue(event.getGroup().getId(), userId)) {
+            boolean participates = groupMembers.findByGroupIdAndUserId(event.getGroup().getId(), userId)
+                    .filter(GroupMemberJpaEntity::isActive)
+                    .map(member -> member.participatesIn(event.getId()))
+                    .orElse(false);
+            if (!participates) {
                 throw new DomainException("Expense users must belong to the event group");
             }
         }
     }
 
-    private void requireMembership(UUID groupId, UUID userId) {
-        if (!groupMembers.existsByGroupIdAndUserIdAndActiveTrue(groupId, userId)) {
-            throw new DomainException("User does not belong to this group");
+    // Integrante ativo do grupo e, se for temporario, so no proprio evento.
+    private void requireEventAccess(EventJpaEntity event, UUID userId) {
+        GroupMemberJpaEntity member = groupMembers.findByGroupIdAndUserId(event.getGroup().getId(), userId)
+                .filter(GroupMemberJpaEntity::isActive)
+                .orElseThrow(() -> new DomainException("User does not belong to this group"));
+        if (!member.participatesIn(event.getId())) {
+            throw new DomainException("Temporary members can only access their own event");
         }
     }
 

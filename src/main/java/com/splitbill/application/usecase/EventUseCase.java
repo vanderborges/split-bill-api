@@ -84,6 +84,16 @@ public class EventUseCase {
         this.settlements = settlements;
     }
 
+    // Temporario so enxerga o evento ao qual esta amarrado.
+    private boolean visibleTo(EventJpaEntity event, UUID viewerUserId) {
+        if (viewerUserId == null) {
+            return true;
+        }
+        return groupMembers.findByGroupIdAndUserId(event.getGroup().getId(), viewerUserId)
+                .map(member -> member.participatesIn(event.getId()))
+                .orElse(true);
+    }
+
     @Transactional(readOnly = true)
     public List<EventResponse> list(UUID viewerUserId, UUID groupId) {
         List<EventJpaEntity> source;
@@ -102,6 +112,7 @@ public class EventUseCase {
                     .toList();
         }
         return source.stream()
+                .filter(event -> visibleTo(event, viewerUserId))
                 .sorted(Comparator.comparing(EventJpaEntity::getCreatedAt))
                 .map(this::toResponse)
                 .toList();

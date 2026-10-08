@@ -8,6 +8,8 @@ public record GroupInviteResponse(
         UUID groupId,
         UUID createdByUserId,
         boolean active,
-        LocalDateTime createdAt
+        LocalDateTime createdAt,
+        // Convite temporario: evento ao qual a pessoa fica amarrada (nulo = convite do grupo).
+        UUID eventId
 ) {
 }

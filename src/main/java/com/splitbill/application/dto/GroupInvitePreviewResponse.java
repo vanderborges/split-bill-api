@@ -6,6 +6,8 @@ public record GroupInvitePreviewResponse(
         UUID id,
         UUID groupId,
         String groupName,
-        boolean active
+        boolean active,
+        UUID eventId,
+        String eventName
 ) {
 }

@@ -8,5 +8,8 @@ import java.util.UUID;
 
 public interface GroupInviteJpaRepository extends JpaRepository<GroupInviteJpaEntity, UUID> {
 
-    Optional<GroupInviteJpaEntity> findFirstByGroupIdAndActiveTrueOrderByCreatedAtDesc(UUID groupId);
+    // Convite normal do grupo (sem evento) - convites temporarios ficam de fora.
+    Optional<GroupInviteJpaEntity> findFirstByGroupIdAndEventIsNullAndActiveTrueOrderByCreatedAtDesc(UUID groupId);
+
+    Optional<GroupInviteJpaEntity> findFirstByEventIdAndActiveTrueOrderByCreatedAtDesc(UUID eventId);
 }

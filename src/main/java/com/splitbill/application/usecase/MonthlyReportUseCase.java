@@ -8,9 +8,11 @@ import com.splitbill.domain.exception.DomainException;
 import com.splitbill.domain.valueobject.EventStatus;
 import com.splitbill.domain.valueobject.EventType;
 import com.splitbill.infrastructure.persistence.entity.ExpenseJpaEntity;
+import com.splitbill.infrastructure.persistence.entity.ExpenseParticipantJpaEntity;
 import com.splitbill.infrastructure.persistence.entity.EventJpaEntity;
 import com.splitbill.infrastructure.persistence.entity.GroupJpaEntity;
 import com.splitbill.infrastructure.persistence.entity.GroupMemberJpaEntity;
+import com.splitbill.infrastructure.persistence.entity.InstallmentGroupJpaEntity;
 import com.splitbill.infrastructure.persistence.entity.MonthJpaEntity;
 import com.splitbill.infrastructure.persistence.entity.UserJpaEntity;
 import com.splitbill.infrastructure.persistence.repository.EventJpaRepository;
@@ -34,6 +36,7 @@ import java.util.HashSet;
 import java.util.Queue;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class MonthlyReportUseCase {
@@ -72,7 +75,7 @@ public class MonthlyReportUseCase {
                 .orElseThrow(() -> new DomainException("Month not found"));
         EventJpaEntity event = events.findFirstByMonthIdAndTypeOrderByCreatedAtAsc(monthId, EventType.MONTHLY)
                 .orElseGet(() -> createMonthlyEvent(month));
-        groupRules.requireMembership(event.getGroup().getId(), requesterId);
+        groupRules.requireEventAccess(event, requesterId);
         return buildReport(event, month);
     }
 
@@ -80,7 +83,7 @@ public class MonthlyReportUseCase {
     public MonthlyReportResponse getByEvent(UUID eventId, UUID requesterId) {
         EventJpaEntity event = events.findById(eventId)
                 .orElseThrow(() -> new DomainException("Event not found"));
-        groupRules.requireMembership(event.getGroup().getId(), requesterId);
+        groupRules.requireEventAccess(event, requesterId);
         MonthJpaEntity month = event.getMonth();
         return buildReport(event, month);
     }
@@ -89,7 +92,7 @@ public class MonthlyReportUseCase {
     public List<BalanceExpenseDetailResponse> getBalanceDetails(UUID eventId, UUID billingUserId, UUID requesterId) {
         EventJpaEntity event = events.findById(eventId)
                 .orElseThrow(() -> new DomainException("Event not found"));
-        groupRules.requireMembership(event.getGroup().getId(), requesterId);
+        groupRules.requireEventAccess(event, requesterId);
         Set<UUID> groupedUserIds = billingGroupUserIds(event.getGroup().getId(), billingUserId);
         if (groupedUserIds.isEmpty()) {
             throw new DomainException("Balance user not found in event group");
@@ -117,7 +120,7 @@ public class MonthlyReportUseCase {
     public List<PaymentSuggestionResponse> getPaymentSuggestions(UUID eventId, UUID requesterId) {
         EventJpaEntity event = events.findById(eventId)
                 .orElseThrow(() -> new DomainException("Event not found"));
-        groupRules.requireMembership(event.getGroup().getId(), requesterId);
+        groupRules.requireEventAccess(event, requesterId);
 
         List<MonthlyBalanceResponse> activeBalances = calculateTotals(eventId).values().stream()
                 .filter(BalanceTotals::hasActivity)
@@ -230,6 +233,8 @@ public class MonthlyReportUseCase {
                 .orElseThrow(() -> new DomainException("Event not found"));
         Map<UUID, BalanceTotals> totalsByUser = new LinkedHashMap<>();
         groupMembers.findByGroupIdAndActiveTrue(event.getGroup().getId()).stream()
+                // Temporario de outro evento nao entra (nem com saldo zerado).
+                .filter(member -> member.participatesIn(eventId))
                 .map(GroupMemberJpaEntity::getUser)
                 .filter(user -> user.getDeletedAt() == null)
                 .forEach(user -> totalsByUser.put(user.getId(), new BalanceTotals(user)));
@@ -277,6 +282,19 @@ public class MonthlyReportUseCase {
                 .map(payer -> payer.getPaidAmount().setScale(MONEY_SCALE, RoundingMode.HALF_UP))
                 .reduce(BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP), BigDecimal::add);
         BigDecimal impact = paid.subtract(consumed).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+        int shareCount = expense.getParticipants().stream()
+                .filter(participant -> userIds.contains(participant.getUser().getId()))
+                .mapToInt(participant -> participant.getShareCount() == null ? 1 : participant.getShareCount())
+                .sum();
+        int totalShares = expense.getParticipants().stream()
+                .mapToInt(participant -> participant.getShareCount() == null ? 1 : participant.getShareCount())
+                .sum();
+        String shareDescription = expense.getParticipants().stream()
+                .filter(participant -> userIds.contains(participant.getUser().getId()))
+                .map(ExpenseParticipantJpaEntity::getShareDescription)
+                .filter(description -> description != null && !description.isBlank())
+                .collect(Collectors.joining("; "));
+        InstallmentGroupJpaEntity installmentGroup = expense.getInstallmentGroup();
         return new BalanceExpenseDetailResponse(
                 expense.getId(),
                 expense.getDescription(),
@@ -285,7 +303,14 @@ public class MonthlyReportUseCase {
                 expense.getAmount(),
                 consumed,
                 paid,
-                impact
+                impact,
+                expense.getInstallmentNumber(),
+                expense.getTotalInstallments(),
+                installmentGroup != null && installmentGroup.isSubscription(),
+                installmentGroup != null && installmentGroup.getCancelledAt() != null,
+                shareCount,
+                totalShares,
+                shareDescription.isEmpty() ? null : shareDescription
         );
     }
 

@@ -111,8 +111,11 @@ public class GroupUseCase {
             group.setUpdatedAt(LocalDateTime.now());
             return toResponse(group);
         }
-        if (!members.existsByGroupIdAndUserIdAndActiveTrue(groupId, receiverUserId)) {
-            throw new DomainException("Receiver must be an active member of the group");
+        GroupMemberJpaEntity receiverMember = members.findByGroupIdAndUserId(groupId, receiverUserId)
+                .filter(GroupMemberJpaEntity::isActive)
+                .orElseThrow(() -> new DomainException("Receiver must be an active member of the group"));
+        if (receiverMember.isTemporary()) {
+            throw new DomainException("Temporary members cannot be the group receiver");
         }
         UserJpaEntity receiver = users.findById(receiverUserId)
                 .orElseThrow(() -> new DomainException("User not found"));
@@ -141,12 +144,93 @@ public class GroupUseCase {
         return toResponse(group);
     }
 
+    /**
+     * Integrantes ativos do grupo. Com {@code eventId}: so quem participa
+     * desse evento (fixos + temporarios amarrados a ele) - e a lista usada
+     * pra escolher participantes/pagadores. Sem {@code eventId}: fixos +
+     * temporarios cujo evento ainda nao fechou (fechado = some da lista,
+     * mas continua no grupo; ver {@link #listTemporaryMembers}). Um
+     * temporario so enxerga as pessoas do proprio evento.
+     */
     @Transactional(readOnly = true)
-    public List<GroupMemberResponse> listMembers(UUID groupId, UUID viewerUserId) {
+    public List<GroupMemberResponse> listMembers(UUID groupId, UUID viewerUserId, UUID eventId) {
         requireMembership(groupId, viewerUserId);
+        UUID scopeEventId = eventId;
+        if (viewerUserId != null) {
+            GroupMemberJpaEntity viewer = members.findByGroupIdAndUserId(groupId, viewerUserId).orElse(null);
+            if (viewer != null && viewer.isTemporary() && viewer.getTemporaryEvent() != null) {
+                scopeEventId = viewer.getTemporaryEvent().getId();
+            }
+        }
+        final UUID filterEventId = scopeEventId;
         return members.findByGroupIdAndActiveTrue(groupId).stream()
+                .filter(member -> filterEventId != null
+                        ? member.participatesIn(filterEventId)
+                        : !member.isTemporary() || isTemporaryEventOpen(member))
                 .map(this::toMemberResponse)
                 .toList();
+    }
+
+    /** Admin: todos os temporarios do grupo (inclusive os de eventos ja fechados, ocultos nas listas). */
+    @Transactional(readOnly = true)
+    public List<GroupMemberResponse> listTemporaryMembers(UUID groupId, UUID requesterId) {
+        requireAdmin(groupId, requesterId);
+        return members.findByGroupIdAndActiveTrue(groupId).stream()
+                .filter(GroupMemberJpaEntity::isTemporary)
+                .map(this::toMemberResponse)
+                .toList();
+    }
+
+    /**
+     * Admin: reativa uma pessoa temporaria num outro evento (aberto) do
+     * grupo - ela passa a enxergar/participar so desse novo evento.
+     */
+    @Transactional
+    public GroupMemberResponse assignTemporaryEvent(UUID groupId, UUID userId, UUID eventId, UUID requesterId) {
+        requireAdmin(groupId, requesterId);
+        GroupMemberJpaEntity member = members.findByGroupIdAndUserId(groupId, userId)
+                .filter(GroupMemberJpaEntity::isActive)
+                .orElseThrow(() -> new DomainException("Group member not found"));
+        if (!member.isTemporary()) {
+            throw new DomainException("Only temporary members can be moved to another event");
+        }
+        member.setTemporaryEvent(requireOpenEventOfGroup(groupId, eventId));
+        member.setUpdatedAt(LocalDateTime.now());
+        return toMemberResponse(member);
+    }
+
+    /** Evento do grupo, nao apagado e nao fechado - destino valido pra um temporario. */
+    public EventJpaEntity requireOpenEventOfGroup(UUID groupId, UUID eventId) {
+        EventJpaEntity event = events.findById(eventId)
+                .orElseThrow(() -> new DomainException("Event not found"));
+        if (!event.getGroup().getId().equals(groupId) || event.getDeletedAt() != null) {
+            throw new DomainException("Event not found");
+        }
+        if (event.getStatus() == EventStatus.CLOSED) {
+            throw new DomainException("Event is already closed");
+        }
+        return event;
+    }
+
+    /**
+     * Acesso a um evento: precisa ser integrante ativo do grupo e, se for
+     * temporario, o evento tem que ser o dele.
+     */
+    public void requireEventAccess(EventJpaEntity event, UUID userId) {
+        if (userId == null) {
+            return;
+        }
+        GroupMemberJpaEntity member = members.findByGroupIdAndUserId(event.getGroup().getId(), userId)
+                .filter(GroupMemberJpaEntity::isActive)
+                .orElseThrow(() -> new DomainException("User does not belong to this group"));
+        if (!member.participatesIn(event.getId())) {
+            throw new DomainException("Temporary members can only access their own event");
+        }
+    }
+
+    private boolean isTemporaryEventOpen(GroupMemberJpaEntity member) {
+        EventJpaEntity event = member.getTemporaryEvent();
+        return event != null && event.getDeletedAt() == null && event.getStatus() != EventStatus.CLOSED;
     }
 
     @Transactional
@@ -281,13 +365,6 @@ public class GroupUseCase {
     }
 
     private GroupMemberResponse toMemberResponse(GroupMemberJpaEntity member) {
-        return new GroupMemberResponse(
-                member.getId(),
-                member.getGroup().getId(),
-                member.getUser().getId(),
-                member.getUser().getNickname(),
-                member.getRole(),
-                member.isActive()
-        );
+        return GroupMemberResponse.from(member);
     }
 }

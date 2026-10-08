@@ -12,6 +12,15 @@ public record BalanceExpenseDetailResponse(
         BigDecimal amount,
         BigDecimal consumed,
         BigDecimal paid,
-        BigDecimal impact
+        BigDecimal impact,
+        Integer installmentNumber,
+        Integer totalInstallments,
+        boolean subscription,
+        boolean subscriptionCancelled,
+        // Cotas de quem esta sendo detalhado (soma, se for mais de um userId),
+        // o total de cotas da despesa e o motivo informado no cadastro.
+        int shareCount,
+        int totalShares,
+        String shareDescription
 ) {
 }

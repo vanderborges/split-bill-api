@@ -36,6 +36,14 @@ public class GroupMemberJpaEntity {
     @Column(nullable = false)
     private boolean active;
 
+    /** Pessoa temporaria: so enxerga/participa de [temporaryEvent]. */
+    @Column(nullable = false)
+    private boolean temporary;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "temporary_event_id")
+    private EventJpaEntity temporaryEvent;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
@@ -96,5 +104,29 @@ public class GroupMemberJpaEntity {
 
     public void setUpdatedAt(LocalDateTime updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public boolean isTemporary() {
+        return temporary;
+    }
+
+    public void setTemporary(boolean temporary) {
+        this.temporary = temporary;
+    }
+
+    public EventJpaEntity getTemporaryEvent() {
+        return temporaryEvent;
+    }
+
+    public void setTemporaryEvent(EventJpaEntity temporaryEvent) {
+        this.temporaryEvent = temporaryEvent;
+    }
+
+    /**
+     * Membro fixo participa de todos os eventos do grupo; temporario so do
+     * evento ao qual esta amarrado.
+     */
+    public boolean participatesIn(UUID eventId) {
+        return !temporary || (temporaryEvent != null && temporaryEvent.getId().equals(eventId));
     }
 }

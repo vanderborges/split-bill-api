@@ -50,7 +50,7 @@ public class EventSettlementUseCase {
     public List<EventSettlementResponse> listByEvent(UUID eventId, UUID requesterId) {
         EventJpaEntity event = events.findById(eventId)
                 .orElseThrow(() -> new DomainException("Event not found"));
-        groupRules.requireMembership(event.getGroup().getId(), requesterId);
+        groupRules.requireEventAccess(event, requesterId);
         LocalDateTime now = LocalDateTime.now();
 
         for (MonthlyReportUseCase.BalanceResult balance : reports.calculateBalances(eventId)) {

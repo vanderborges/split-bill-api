@@ -1,9 +1,12 @@
 package com.splitbill.application.usecase;
 
+import com.splitbill.application.dto.ExpenseParticipantResponse;
+import com.splitbill.application.dto.ExpensePayerResponse;
 import com.splitbill.application.dto.ExpenseResponse;
 import com.splitbill.application.dto.UserExpenseSummaryResponse;
 import com.splitbill.domain.exception.DomainException;
 import com.splitbill.infrastructure.persistence.entity.ExpenseJpaEntity;
+import com.splitbill.infrastructure.persistence.entity.GroupMemberJpaEntity;
 import com.splitbill.infrastructure.persistence.entity.ExpenseParticipantJpaEntity;
 import com.splitbill.infrastructure.persistence.entity.ExpensePayerJpaEntity;
 import com.splitbill.infrastructure.persistence.entity.UserJpaEntity;
@@ -62,6 +65,15 @@ public class UserExpenseSummaryUseCase {
     ) {
         if (!groupMembers.existsByGroupIdAndUserIdAndActiveTrue(groupId, requesterId)) {
             throw new DomainException("User does not belong to this group");
+        }
+        // Temporario: o extrato fica restrito ao proprio evento.
+        GroupMemberJpaEntity requesterMember = groupMembers.findByGroupIdAndUserId(groupId, requesterId).orElse(null);
+        if (requesterMember != null && requesterMember.isTemporary() && requesterMember.getTemporaryEvent() != null) {
+            UUID ownEventId = requesterMember.getTemporaryEvent().getId();
+            if (eventId != null && !eventId.equals(ownEventId)) {
+                throw new DomainException("Temporary members can only access their own event");
+            }
+            eventId = ownEventId;
         }
         boolean requesterIsAdmin = groupMembers.existsByGroupIdAndUserIdAndRoleAndActiveTrue(
                 groupId, requesterId, GroupMemberRole.ADMIN);
@@ -144,7 +156,11 @@ public class UserExpenseSummaryUseCase {
                 totalPaid,
                 balance,
                 filtered.stream()
-                        .map(this::toSummaryResponse)
+                        .map(expense -> toSummaryResponse(
+                                expense,
+                                participantsByExpenseId.getOrDefault(expense.getId(), Collections.emptyList()),
+                                payersByExpenseId.getOrDefault(expense.getId(), Collections.emptyList())
+                        ))
                         .toList()
         );
     }
@@ -173,7 +189,11 @@ public class UserExpenseSummaryUseCase {
         return consumed || paid;
     }
 
-    private ExpenseResponse toSummaryResponse(ExpenseJpaEntity expense) {
+    private ExpenseResponse toSummaryResponse(
+            ExpenseJpaEntity expense,
+            List<ExpenseParticipantJpaEntity> expenseParticipants,
+            List<ExpensePayerJpaEntity> expensePayers
+    ) {
         return new ExpenseResponse(
                 expense.getId(),
                 expense.getDescription(),
@@ -189,8 +209,24 @@ public class UserExpenseSummaryUseCase {
                 expense.getInstallmentGroup() == null ? null : expense.getInstallmentGroup().getId(),
                 expense.getInstallmentNumber(),
                 expense.getTotalInstallments(),
-                Collections.emptyList(),
-                Collections.emptyList(),
+                // Participantes com cotas/motivo pra o Extrato mostrar por que
+                // alguem ficou com mais cotas que os outros.
+                expensePayers.stream()
+                        .map(payer -> new ExpensePayerResponse(
+                                payer.getUser().getId(),
+                                payer.getUser().getNickname(),
+                                payer.getPaidAmount()
+                        ))
+                        .toList(),
+                expenseParticipants.stream()
+                        .map(participant -> new ExpenseParticipantResponse(
+                                participant.getUser().getId(),
+                                participant.getUser().getNickname(),
+                                participant.getShareAmount(),
+                                participant.getShareCount(),
+                                participant.getShareDescription()
+                        ))
+                        .toList(),
                 expense.getInstallmentGroup() != null && expense.getInstallmentGroup().isSubscription(),
                 expense.getInstallmentGroup() != null && expense.getInstallmentGroup().getCancelledAt() != null,
                 expense.getCreatedAt()

@@ -54,7 +54,7 @@ class GroupInviteUseCaseTest {
 
     @Test
     void getOrCreateCreatesInviteWhenNoneActive() {
-        when(invites.findFirstByGroupIdAndActiveTrueOrderByCreatedAtDesc(groupId)).thenReturn(Optional.empty());
+        when(invites.findFirstByGroupIdAndEventIsNullAndActiveTrueOrderByCreatedAtDesc(groupId)).thenReturn(Optional.empty());
 
         GroupInviteResponse response = useCase.getOrCreate(groupId, adminId);
 
@@ -66,7 +66,7 @@ class GroupInviteUseCaseTest {
     @Test
     void getOrCreateReturnsExistingActiveInviteWithoutCreatingAnother() {
         GroupInviteJpaEntity existing = invite(group, admin, true);
-        when(invites.findFirstByGroupIdAndActiveTrueOrderByCreatedAtDesc(groupId)).thenReturn(Optional.of(existing));
+        when(invites.findFirstByGroupIdAndEventIsNullAndActiveTrueOrderByCreatedAtDesc(groupId)).thenReturn(Optional.of(existing));
 
         GroupInviteResponse first = useCase.getOrCreate(groupId, adminId);
         GroupInviteResponse second = useCase.getOrCreate(groupId, adminId);
@@ -79,7 +79,7 @@ class GroupInviteUseCaseTest {
     @Test
     void regenerateDeactivatesCurrentInviteAndCreatesNewOne() {
         GroupInviteJpaEntity current = invite(group, admin, true);
-        when(invites.findFirstByGroupIdAndActiveTrueOrderByCreatedAtDesc(groupId)).thenReturn(Optional.of(current));
+        when(invites.findFirstByGroupIdAndEventIsNullAndActiveTrueOrderByCreatedAtDesc(groupId)).thenReturn(Optional.of(current));
 
         GroupInviteResponse response = useCase.regenerate(groupId, adminId);
 

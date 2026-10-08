@@ -56,9 +56,13 @@ public class DashboardUseCase {
      */
     @Transactional(readOnly = true)
     public List<DashboardGroupBalanceResponse> getGroupBalances(UUID userId) {
-        List<GroupJpaEntity> userGroups = groupMembers.findByUserIdAndActiveTrue(userId).stream()
+        List<GroupMemberJpaEntity> memberships = groupMembers.findByUserIdAndActiveTrue(userId).stream()
+                .filter(member -> member.getGroup().isActive())
+                .toList();
+        Map<UUID, GroupMemberJpaEntity> membershipByGroupId = memberships.stream()
+                .collect(java.util.stream.Collectors.toMap(member -> member.getGroup().getId(), member -> member, (first, ignored) -> first));
+        List<GroupJpaEntity> userGroups = memberships.stream()
                 .map(GroupMemberJpaEntity::getGroup)
-                .filter(GroupJpaEntity::isActive)
                 .toList();
         if (userGroups.isEmpty()) {
             return List.of();
@@ -70,6 +74,8 @@ public class DashboardUseCase {
         // congeladas.
         List<EventJpaEntity> activeEvents = events.findByGroupIdInAndDeletedAtIsNull(groupIds).stream()
                 .filter(event -> event.getStatus() != EventStatus.CLOSED)
+                // Temporario so ve o saldo do proprio evento.
+                .filter(event -> membershipByGroupId.get(event.getGroup().getId()).participatesIn(event.getId()))
                 .toList();
 
         Map<UUID, EventBalance> balanceByEventId = new LinkedHashMap<>();

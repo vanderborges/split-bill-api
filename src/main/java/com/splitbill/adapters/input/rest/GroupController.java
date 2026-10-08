@@ -1,6 +1,7 @@
 package com.splitbill.adapters.input.rest;
 
 import com.splitbill.application.dto.AddGroupMemberRequest;
+import com.splitbill.application.dto.AssignTemporaryEventRequest;
 import com.splitbill.application.dto.CreateGroupRequest;
 import com.splitbill.application.dto.GroupInviteResponse;
 import com.splitbill.application.dto.GroupMemberResponse;
@@ -80,9 +81,24 @@ public class GroupController {
 
     @GetMapping("/{groupId}/members")
     public List<GroupMemberResponse> listMembers(
-            @PathVariable UUID groupId
+            @PathVariable UUID groupId,
+            @RequestParam(required = false) UUID eventId
     ) {
-        return groups.listMembers(groupId, currentUser.id());
+        return groups.listMembers(groupId, currentUser.id(), eventId);
+    }
+
+    @GetMapping("/{groupId}/members/temporary")
+    public List<GroupMemberResponse> listTemporaryMembers(@PathVariable UUID groupId) {
+        return groups.listTemporaryMembers(groupId, currentUser.id());
+    }
+
+    @PutMapping("/{groupId}/members/{userId}/temporary-event")
+    public GroupMemberResponse assignTemporaryEvent(
+            @PathVariable UUID groupId,
+            @PathVariable UUID userId,
+            @Valid @RequestBody AssignTemporaryEventRequest request
+    ) {
+        return groups.assignTemporaryEvent(groupId, userId, request.eventId(), currentUser.id());
     }
 
     @PostMapping("/{groupId}/members")
@@ -113,6 +129,13 @@ public class GroupController {
     @ResponseStatus(HttpStatus.CREATED)
     public GroupInviteResponse getOrCreateInvite(@PathVariable UUID groupId) {
         return invites.getOrCreate(groupId, currentUser.id());
+    }
+
+    // Convite temporario: quem entrar por ele so participa deste evento.
+    @PostMapping("/{groupId}/events/{eventId}/temporary-invite")
+    @ResponseStatus(HttpStatus.CREATED)
+    public GroupInviteResponse getOrCreateTemporaryInvite(@PathVariable UUID groupId, @PathVariable UUID eventId) {
+        return invites.getOrCreateTemporary(groupId, eventId, currentUser.id());
     }
 
     @PostMapping("/{groupId}/invite/regenerate")
