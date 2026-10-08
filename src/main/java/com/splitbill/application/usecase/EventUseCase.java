@@ -306,13 +306,18 @@ public class EventUseCase {
             if (targetEvent.getStatus() == EventStatus.CLOSED) {
                 throw new DomainException("Cannot create next installment in a closed monthly event");
             }
+            // Mantem a data cadastrada originalmente (a da 1a parcela) em vez de
+            // mover pro mes do evento de destino - assim a parcela que tombou
+            // fica no fim da lista (ordenada da mais recente pra mais antiga).
+            LocalDate originalDate = expensesByInstallment.getOrDefault(1, template).getExpenseDate();
             createInstallmentExpense(
                     template,
                     targetEvent,
                     targetEvent.getMonth(),
                     participants,
                     template.getInstallmentGroup().getTotalAmount(),
-                    nextInstallmentNumber
+                    nextInstallmentNumber,
+                    originalDate
             );
         }
     }
@@ -356,14 +361,15 @@ public class EventUseCase {
             MonthJpaEntity month,
             List<ParticipantSplit> participants,
             BigDecimal amount,
-            int installmentNumber
+            int installmentNumber,
+            LocalDate expenseDate
     ) {
         LocalDateTime now = LocalDateTime.now();
         ExpenseJpaEntity expense = new ExpenseJpaEntity();
         expense.setId(UUID.randomUUID());
         expense.setDescription(template.getInstallmentGroup().getDescription());
         expense.setAmount(amount);
-        expense.setExpenseDate(nextExpenseDate(template, month));
+        expense.setExpenseDate(expenseDate);
         expense.setCategory(template.getCategory());
         expense.setPayer(template.getPayer());
         expense.setCreatedBy(template.getCreatedBy());
@@ -398,11 +404,6 @@ public class EventUseCase {
         expense.getPayers().add(payer);
 
         expenses.save(expense);
-    }
-
-    private LocalDate nextExpenseDate(ExpenseJpaEntity template, MonthJpaEntity month) {
-        int day = Math.min(template.getExpenseDate().getDayOfMonth(), YearMonth.of(month.getYear(), month.getMonth()).lengthOfMonth());
-        return LocalDate.of(month.getYear(), month.getMonth(), day);
     }
 
     @Transactional
