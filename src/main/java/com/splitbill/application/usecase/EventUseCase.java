@@ -138,6 +138,7 @@ public class EventUseCase {
                     .ifPresent(event -> {
                         throw new DomainException("Monthly event already exists");
                     });
+            requireNextMonthWhileOneIsOpen(group, month);
         }
 
         EventJpaEntity event = new EventJpaEntity();
@@ -151,6 +152,59 @@ public class EventUseCase {
         event.setCreatedAt(LocalDateTime.now());
 
         return toResponse(events.save(event));
+    }
+
+    /**
+     * Com um evento mensal ainda aberto no grupo, o proximo evento mensal
+     * criado a mao tem que ser o mes seguinte ao ultimo ja existente, pra
+     * manter a sequencia de meses (o front ja preenche e trava o campo).
+     */
+    private void requireNextMonthWhileOneIsOpen(GroupJpaEntity group, MonthJpaEntity month) {
+        List<EventJpaEntity> monthlyEvents = monthlyEventsOf(group.getId());
+        if (monthlyEvents.stream().noneMatch(event -> event.getStatus() == EventStatus.OPEN)) {
+            return;
+        }
+        YearMonth expected = monthlyEvents.stream()
+                .map(EventUseCase::referenceOf)
+                .max(Comparator.naturalOrder())
+                .orElseThrow()
+                .plusMonths(1);
+        if (!YearMonth.of(month.getYear(), month.getMonth()).equals(expected)) {
+            throw new DomainException("Ja existe um mes aberto: o proximo evento mensal precisa ser "
+                    + formatReference(expected));
+        }
+    }
+
+    /**
+     * Fechar um evento mensal so depois de fechar o mes anterior: nenhum
+     * evento mensal do grupo de um mes antes deste pode continuar OPEN.
+     */
+    private void requirePreviousMonthsNotOpen(EventJpaEntity event) {
+        YearMonth reference = referenceOf(event);
+        monthlyEventsOf(event.getGroup().getId()).stream()
+                .filter(other -> other.getStatus() == EventStatus.OPEN)
+                .filter(other -> referenceOf(other).isBefore(reference))
+                .map(EventUseCase::referenceOf)
+                .min(Comparator.naturalOrder())
+                .ifPresent(previous -> {
+                    throw new DomainException("O mes anterior (" + formatReference(previous)
+                            + ") ainda esta aberto. Feche ele antes de fechar este.");
+                });
+    }
+
+    private List<EventJpaEntity> monthlyEventsOf(UUID groupId) {
+        return events.findByGroupIdAndDeletedAtIsNull(groupId).stream()
+                .filter(event -> event.getType() == EventType.MONTHLY)
+                .filter(event -> event.getMonth() != null)
+                .toList();
+    }
+
+    private static YearMonth referenceOf(EventJpaEntity event) {
+        return YearMonth.of(event.getMonth().getYear(), event.getMonth().getMonth());
+    }
+
+    private static String formatReference(YearMonth reference) {
+        return String.format("%02d/%d", reference.getMonthValue(), reference.getYear());
     }
 
     private MonthJpaEntity findOrCreateMonth(Integer monthNumber, Integer yearNumber) {
@@ -191,6 +245,9 @@ public class EventUseCase {
         if (event.getStatus() != EventStatus.OPEN) {
             throw new DomainException("Only an open event can start settlement");
         }
+        if (event.getType() == EventType.MONTHLY && event.getMonth() != null) {
+            requirePreviousMonthsNotOpen(event);
+        }
 
         if (request != null && request.consolidateToEventId() != null) {
             EventJpaEntity target = events.findById(request.consolidateToEventId())
@@ -227,6 +284,11 @@ public class EventUseCase {
         List<EventJpaEntity> openMonthlyEvents = events.findByGroupIdAndDeletedAtIsNull(group.getId()).stream()
                 .filter(event -> event.getType() == EventType.MONTHLY)
                 .filter(event -> event.getStatus() == EventStatus.OPEN)
+                // Do mes mais antigo pro mais novo: cada um so fecha depois
+                // do anterior (requirePreviousMonthsNotOpen).
+                .sorted(Comparator.comparing(event -> event.getMonth() == null
+                        ? YearMonth.of(9999, 12)
+                        : referenceOf(event)))
                 .toList();
         for (EventJpaEntity event : openMonthlyEvents) {
             startSettlementCore(event, null);
