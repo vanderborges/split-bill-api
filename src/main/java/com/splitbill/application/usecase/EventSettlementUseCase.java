@@ -22,6 +22,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -57,7 +58,8 @@ public class EventSettlementUseCase {
         LocalDateTime now = LocalDateTime.now();
 
         for (MonthlyReportUseCase.BalanceResult balance : reports.calculateBalances(eventId)) {
-            EventSettlementJpaEntity settlement = settlements.findByEventIdAndUserId(eventId, balance.userId())
+            Optional<EventSettlementJpaEntity> existing = settlements.findByEventIdAndUserId(eventId, balance.userId());
+            EventSettlementJpaEntity settlement = existing
                     .orElseGet(() -> createSettlement(event, balance.userId(), now));
             BigDecimal previousAmount = settlement.getAmount();
             SettlementStatus previousStatus = normalizeStatus(settlement.getStatus());
@@ -65,7 +67,12 @@ public class EventSettlementUseCase {
             settlement.setRole(roleFrom(balance.balance()));
             settlement.setAmount(amount);
             settlement.setUpdatedAt(now);
-            settlement.setStatus(defaultStatus(amount, previousAmount, previousStatus));
+            // Evento fechado ja foi todo acertado: linha que so nasce agora
+            // (ninguem tinha aberto o relatorio antes de fechar, ou fechado
+            // por ajuste de dados como a V23) entra como paga, nao pendente.
+            settlement.setStatus(existing.isEmpty() && event.getStatus() == EventStatus.CLOSED
+                    ? SettlementStatus.PAID
+                    : defaultStatus(amount, previousAmount, previousStatus));
         }
         syncLinkedSettlements(settlements.findByEventId(eventId), now);
 
