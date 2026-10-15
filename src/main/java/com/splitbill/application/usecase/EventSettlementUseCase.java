@@ -19,7 +19,9 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -65,6 +67,7 @@ public class EventSettlementUseCase {
             settlement.setUpdatedAt(now);
             settlement.setStatus(defaultStatus(amount, previousAmount, previousStatus));
         }
+        syncLinkedSettlements(settlements.findByEventId(eventId), now);
 
         return settlements.findByEventId(eventId).stream()
                 .sorted(Comparator.comparing(settlement -> settlement.getUser().getNickname()))
@@ -85,10 +88,50 @@ public class EventSettlementUseCase {
         UserJpaEntity admin = users.findById(requesterId)
                 .orElseThrow(() -> new DomainException("Admin user not found"));
 
-        settlement.setStatus(normalizeStatus(request.status()));
+        SettlementStatus status = normalizeStatus(request.status());
+        LocalDateTime now = LocalDateTime.now();
+        settlement.setStatus(status);
         settlement.setUpdatedByAdmin(admin);
-        settlement.setUpdatedAt(LocalDateTime.now());
+        settlement.setUpdatedAt(now);
+
+        // Pessoas com cobranca vinculada a este titular acompanham o status
+        // dele - o saldo delas ja esta somado na linha do titular.
+        UUID rootId = reports.billingRootId(settlement.getUser());
+        settlements.findByEventId(settlement.getEvent().getId()).stream()
+                .filter(linked -> !linked.getId().equals(settlement.getId()))
+                .filter(linked -> reports.billingRootId(linked.getUser()).equals(rootId))
+                .forEach(linked -> {
+                    linked.setStatus(status);
+                    linked.setUpdatedByAdmin(admin);
+                    linked.setUpdatedAt(now);
+                });
         return toResponse(settlement);
+    }
+
+    /**
+     * Linha de acerto de quem tem cobranca vinculada (ex.: criada antes do
+     * vinculo) espelha o status do titular. Sem isso ela ficava PENDING pra
+     * sempre - invisivel no relatorio, mas travando o fechamento automatico
+     * e recebendo alerta de cobranca.
+     */
+    private void syncLinkedSettlements(List<EventSettlementJpaEntity> eventSettlements, LocalDateTime now) {
+        Map<UUID, SettlementStatus> statusByRoot = new HashMap<>();
+        for (EventSettlementJpaEntity settlement : eventSettlements) {
+            UUID userId = settlement.getUser().getId();
+            if (reports.billingRootId(settlement.getUser()).equals(userId)) {
+                statusByRoot.put(userId, normalizeStatus(settlement.getStatus()));
+            }
+        }
+        for (EventSettlementJpaEntity settlement : eventSettlements) {
+            UUID rootId = reports.billingRootId(settlement.getUser());
+            SettlementStatus rootStatus = statusByRoot.get(rootId);
+            if (rootId.equals(settlement.getUser().getId()) || rootStatus == null
+                    || normalizeStatus(settlement.getStatus()) == rootStatus) {
+                continue;
+            }
+            settlement.setStatus(rootStatus);
+            settlement.setUpdatedAt(now);
+        }
     }
 
     private EventSettlementJpaEntity createSettlement(EventJpaEntity event, UUID userId, LocalDateTime now) {

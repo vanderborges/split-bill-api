@@ -251,6 +251,15 @@ public class MonthlyReportUseCase {
         return totalsByUser;
     }
 
+    /**
+     * Titular da cobranca: segue o vinculo de "cobranca vinculada" ate quem
+     * nao esta vinculado a ninguem. E nessa pessoa que o saldo do grupo de
+     * vinculados e somado no relatorio.
+     */
+    public UUID billingRootId(UserJpaEntity user) {
+        return resolveBillingUser(user).getId();
+    }
+
     private UserJpaEntity resolveBillingUser(UserJpaEntity user) {
         Set<UUID> visited = new HashSet<>();
         UserJpaEntity current = user;
