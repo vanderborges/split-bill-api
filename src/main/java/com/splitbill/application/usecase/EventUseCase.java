@@ -306,11 +306,18 @@ public class EventUseCase {
             }
 
             ExpenseJpaEntity template = expensesByInstallment.getOrDefault(eventExpense.getInstallmentNumber(), eventExpense);
+            BigDecimal nextAmount = template.getInstallmentGroup().getTotalAmount();
+            // Divisao por valor: a proxima parcela repete os mesmos valores por
+            // pessoa (so faz sentido se o valor da parcela for o mesmo; se nao
+            // for, cai na divisao por cotas).
+            boolean copyAmounts = template.isCustomSplit()
+                    && template.getAmount().compareTo(nextAmount) == 0;
             List<ParticipantSplit> participants = template.getParticipants().stream()
                     .map(participant -> new ParticipantSplit(
                             participant.getUser().getId(),
                             participant.getShareCount(),
-                            participant.getShareDescription()
+                            participant.getShareDescription(),
+                            copyAmounts ? participant.getShareAmount() : null
                     ))
                     .toList();
             EventJpaEntity targetEvent = resolveRolloverTarget(event);
@@ -326,7 +333,7 @@ public class EventUseCase {
                     targetEvent,
                     targetEvent.getMonth(),
                     participants,
-                    template.getInstallmentGroup().getTotalAmount(),
+                    nextAmount,
                     nextInstallmentNumber,
                     originalDate
             );
@@ -389,6 +396,7 @@ public class EventUseCase {
         expense.setInstallmentGroup(template.getInstallmentGroup());
         expense.setInstallmentNumber(installmentNumber);
         expense.setTotalInstallments(template.getTotalInstallments());
+        expense.setCustomSplit(participants.stream().anyMatch(participant -> participant.fixedAmount() != null));
         expense.setCreatedAt(now);
         expense.setUpdatedAt(now);
 

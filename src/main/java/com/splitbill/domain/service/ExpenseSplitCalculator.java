@@ -30,6 +30,9 @@ public class ExpenseSplitCalculator {
         if (participants == null || participants.isEmpty()) {
             throw new DomainException("Expense must have at least one participant");
         }
+        if (participants.stream().anyMatch(participant -> participant.fixedAmount() != null)) {
+            return splitByFixedAmounts(amount, participants);
+        }
         if (participants.stream().anyMatch(participant -> participant.shareCount() <= 0)) {
             throw new DomainException("Participant share count must be greater than zero");
         }
@@ -61,5 +64,34 @@ public class ExpenseSplitCalculator {
         }
 
         return shares;
+    }
+
+    /**
+     * Divisao por valor: cada participante tem o valor informado na mao. Todos
+     * precisam ter valor (nada de misturar com cotas) e a soma tem que bater
+     * exatamente com o total da despesa.
+     */
+    private List<ParticipantShare> splitByFixedAmounts(BigDecimal amount, List<ParticipantSplit> participants) {
+        if (participants.stream().anyMatch(participant -> participant.fixedAmount() == null)) {
+            throw new DomainException("Informe o valor de todos os participantes");
+        }
+        if (participants.stream().anyMatch(participant -> participant.fixedAmount().compareTo(BigDecimal.ZERO) <= 0)) {
+            throw new DomainException("O valor de cada participante precisa ser maior que zero");
+        }
+        BigDecimal expected = amount.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+        BigDecimal total = participants.stream()
+                .map(participant -> participant.fixedAmount().setScale(MONEY_SCALE, RoundingMode.HALF_UP))
+                .reduce(BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP), BigDecimal::add);
+        if (total.compareTo(expected) != 0) {
+            throw new DomainException("A soma dos valores dos participantes precisa bater com o valor da despesa");
+        }
+        return participants.stream()
+                .map(participant -> new ParticipantShare(
+                        participant.userId(),
+                        participant.fixedAmount().setScale(MONEY_SCALE, RoundingMode.HALF_UP),
+                        1,
+                        participant.shareDescription()
+                ))
+                .toList();
     }
 }

@@ -25,6 +25,7 @@ public record ExpenseResponse(
         List<ExpenseParticipantResponse> participants,
         boolean isSubscription,
         boolean subscriptionCancelled,
+        boolean customSplit,
         LocalDateTime createdAt
 ) {
 }

@@ -346,6 +346,7 @@ public class ExpenseUseCase {
         expense.setPayer(mainPayer);
         expense.setInstallmentNumber(installmentNumber);
         expense.setTotalInstallments(totalInstallments);
+        expense.setCustomSplit(participantRequests.stream().anyMatch(participant -> participant.fixedAmount() != null));
         clearCurrentShares(expense);
 
         for (ParticipantShare share : shares) {
@@ -494,7 +495,8 @@ public class ExpenseUseCase {
                     .map(participant -> new ParticipantSplit(
                             participant.userId(),
                             participant.shareCount() == null ? 1 : participant.shareCount(),
-                            normalizeDescription(participant.shareDescription())
+                            normalizeDescription(participant.shareDescription()),
+                            participant.shareAmount()
                     ))
                     .toList();
         } else if (request.participantIds() != null && !request.participantIds().isEmpty()) {
@@ -584,6 +586,7 @@ public class ExpenseUseCase {
                         .toList(),
                 expense.getInstallmentGroup() != null && expense.getInstallmentGroup().isSubscription(),
                 expense.getInstallmentGroup() != null && expense.getInstallmentGroup().getCancelledAt() != null,
+                expense.isCustomSplit(),
                 expense.getCreatedAt()
         );
     }

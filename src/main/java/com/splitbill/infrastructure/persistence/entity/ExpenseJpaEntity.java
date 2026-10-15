@@ -66,6 +66,9 @@ public class ExpenseJpaEntity {
     @Column(name = "total_installments")
     private Integer totalInstallments;
 
+    @Column(name = "custom_split", nullable = false)
+    private boolean customSplit;
+
     @OneToMany(mappedBy = "expense", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<ExpenseParticipantJpaEntity> participants = new ArrayList<>();
 
@@ -175,6 +178,14 @@ public class ExpenseJpaEntity {
 
     public void setInstallmentNumber(Integer installmentNumber) {
         this.installmentNumber = installmentNumber;
+    }
+
+    public boolean isCustomSplit() {
+        return customSplit;
+    }
+
+    public void setCustomSplit(boolean customSplit) {
+        this.customSplit = customSplit;
     }
 
     public Integer getTotalInstallments() {

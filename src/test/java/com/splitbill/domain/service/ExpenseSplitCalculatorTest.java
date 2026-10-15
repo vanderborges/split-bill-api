@@ -46,6 +46,51 @@ class ExpenseSplitCalculatorTest {
     }
 
     @Test
+    void splitsExpenseByFixedAmounts() {
+        UUID joao = UUID.randomUUID();
+        UUID maria = UUID.randomUUID();
+
+        List<ParticipantShare> shares = calculator.splitByShares(
+                new BigDecimal("100.00"),
+                List.of(
+                        new ParticipantSplit(joao, 1, null, new BigDecimal("70")),
+                        new ParticipantSplit(maria, 1, null, new BigDecimal("30.00"))
+                )
+        );
+
+        assertThat(shares)
+                .extracting(ParticipantShare::amount)
+                .containsExactly(new BigDecimal("70.00"), new BigDecimal("30.00"));
+        assertThat(shares).extracting(ParticipantShare::shareCount).containsOnly(1);
+    }
+
+    @Test
+    void rejectsFixedAmountsThatDoNotMatchTotal() {
+        assertThatThrownBy(() -> calculator.splitByShares(
+                new BigDecimal("100.00"),
+                List.of(
+                        new ParticipantSplit(UUID.randomUUID(), 1, null, new BigDecimal("70.00")),
+                        new ParticipantSplit(UUID.randomUUID(), 1, null, new BigDecimal("29.99"))
+                )
+        ))
+                .isInstanceOf(DomainException.class)
+                .hasMessage("A soma dos valores dos participantes precisa bater com o valor da despesa");
+    }
+
+    @Test
+    void rejectsMixingFixedAmountsWithShares() {
+        assertThatThrownBy(() -> calculator.splitByShares(
+                new BigDecimal("100.00"),
+                List.of(
+                        new ParticipantSplit(UUID.randomUUID(), 1, null, new BigDecimal("100.00")),
+                        new ParticipantSplit(UUID.randomUUID(), 1, null)
+                )
+        ))
+                .isInstanceOf(DomainException.class)
+                .hasMessage("Informe o valor de todos os participantes");
+    }
+
+    @Test
     void splitsExpenseByParticipantShareCounts() {
         UUID vander = UUID.randomUUID();
         UUID de = UUID.randomUUID();

@@ -3,6 +3,7 @@ package com.splitbill.application.usecase;
 import com.splitbill.application.dto.EventSettlementResponse;
 import com.splitbill.application.dto.UpdateSettlementStatusRequest;
 import com.splitbill.domain.exception.DomainException;
+import com.splitbill.domain.valueobject.EventStatus;
 import com.splitbill.domain.valueobject.SettlementRole;
 import com.splitbill.domain.valueobject.SettlementStatus;
 import com.splitbill.infrastructure.persistence.entity.EventJpaEntity;
@@ -76,6 +77,11 @@ public class EventSettlementUseCase {
         EventSettlementJpaEntity settlement = settlements.findById(settlementId)
                 .orElseThrow(() -> new DomainException("Settlement not found"));
         groupRules.requireAdmin(settlement.getEvent().getGroup().getId(), requesterId);
+        // Pagamento so se confirma com o evento aguardando pagamento: aberto
+        // ainda pode receber despesa (o saldo muda) e fechado ja foi acertado.
+        if (settlement.getEvent().getStatus() != EventStatus.SETTLING) {
+            throw new DomainException("So e possivel alterar pagamentos com o evento aguardando pagamento");
+        }
         UserJpaEntity admin = users.findById(requesterId)
                 .orElseThrow(() -> new DomainException("Admin user not found"));
 
