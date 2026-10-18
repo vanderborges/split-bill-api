@@ -46,6 +46,10 @@ public class UserJpaEntity {
     @Column(nullable = false)
     private boolean active;
 
+    // Pessoa sem cadastro criada pelo admin do grupo (nao faz login).
+    @Column(nullable = false)
+    private boolean placeholder;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
@@ -125,6 +129,14 @@ public class UserJpaEntity {
 
     public void setAdmin(boolean admin) {
         this.admin = admin;
+    }
+
+    public boolean isPlaceholder() {
+        return placeholder;
+    }
+
+    public void setPlaceholder(boolean placeholder) {
+        this.placeholder = placeholder;
     }
 
     public boolean isActive() {

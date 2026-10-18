@@ -44,6 +44,8 @@ public class UserUseCase {
     public List<UserResponse> list() {
         return users.findAll().stream()
                 .filter(user -> user.getDeletedAt() == null)
+                // Pessoas sem cadastro sao do grupo, nao contas do app.
+                .filter(user -> !user.isPlaceholder())
                 .map(this::toResponse)
                 .toList();
     }
@@ -194,7 +196,7 @@ public class UserUseCase {
         }
         UserJpaEntity user = users.findById(userId)
                 .orElseThrow(() -> new DomainException("User not found"));
-        if (user.getDeletedAt() != null) {
+        if (user.getDeletedAt() != null || user.isPlaceholder()) {
             throw new DomainException("User not found");
         }
         user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
@@ -224,7 +226,7 @@ public class UserUseCase {
         }
         UserJpaEntity billingUser = users.findById(billingUserId)
                 .orElseThrow(() -> new DomainException("Billing user not found"));
-        if (billingUser.getDeletedAt() != null || !billingUser.isActive()) {
+        if (billingUser.getDeletedAt() != null || !billingUser.isActive() || billingUser.isPlaceholder()) {
             throw new DomainException("Billing user must be active");
         }
         if (billingUser.getBillingUser() != null) {

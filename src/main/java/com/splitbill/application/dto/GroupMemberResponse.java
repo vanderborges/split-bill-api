@@ -17,7 +17,9 @@ public record GroupMemberResponse(
         boolean temporary,
         UUID temporaryEventId,
         String temporaryEventName,
-        String temporaryEventStatus
+        String temporaryEventStatus,
+        // Pessoa sem cadastro (nome criado pelo admin, ainda sem dono).
+        boolean placeholder
 ) {
     public static GroupMemberResponse from(GroupMemberJpaEntity member) {
         EventJpaEntity event = member.getTemporaryEvent();
@@ -31,7 +33,8 @@ public record GroupMemberResponse(
                 member.isTemporary(),
                 event == null ? null : event.getId(),
                 event == null ? null : event.getName(),
-                event == null ? null : event.getStatus().name()
+                event == null ? null : event.getStatus().name(),
+                member.getUser().isPlaceholder()
         );
     }
 }

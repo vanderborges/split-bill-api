@@ -119,6 +119,10 @@ public class GroupUseCase {
         }
         UserJpaEntity receiver = users.findById(receiverUserId)
                 .orElseThrow(() -> new DomainException("User not found"));
+        if (receiver.isPlaceholder()) {
+            // Sem cadastro = sem chave PIX pra receber.
+            throw new DomainException("Pessoa sem cadastro nao pode ser o recebedor do grupo");
+        }
         group.setReceiver(receiver);
         group.setUpdatedAt(LocalDateTime.now());
         return toResponse(group);
@@ -239,6 +243,9 @@ public class GroupUseCase {
         GroupJpaEntity group = groups.findById(groupId)
                 .orElseThrow(() -> new DomainException("Group not found"));
         UserJpaEntity user = activeUser(request.userId());
+        if (user.isPlaceholder() && request.role() == GroupMemberRole.ADMIN) {
+            throw new DomainException("Pessoa sem cadastro nao pode ser admin do grupo");
+        }
 
         if (request.role() == GroupMemberRole.ADMIN
                 && members.countByGroupIdAndRoleAndActiveTrue(groupId, GroupMemberRole.ADMIN) >= MAX_ADMINS_PER_GROUP

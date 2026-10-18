@@ -134,9 +134,14 @@ public class NotificationUseCase {
         // converte pro horário local do aparelho na hora de exibir.
         LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
 
+        int sent = 0;
         for (EventSettlementResponse settlement : pending) {
             UserJpaEntity recipient = users.findById(settlement.userId())
                     .orElseThrow(() -> new DomainException("User not found"));
+            if (recipient.isPlaceholder()) {
+                // Pessoa sem cadastro nao abre o app: nao ha pra quem mandar.
+                continue;
+            }
             BillingMessage billingMessage = buildBillingMessage(event, settlement, suggestions);
             NotificationJpaEntity notification = new NotificationJpaEntity();
             notification.setId(UUID.randomUUID());
@@ -148,9 +153,10 @@ public class NotificationUseCase {
             notification.setCreatedBy(actingAs);
             notification.setCreatedAt(now);
             notifications.save(notification);
+            sent++;
         }
 
-        return pending.size();
+        return sent;
     }
 
     /**

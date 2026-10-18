@@ -28,7 +28,8 @@ public class AuthUseCase {
     public AuthResponse login(LoginRequest request) {
         UserJpaEntity user = users.findByEmailIgnoreCase(request.email())
                 .orElseThrow(() -> new DomainException("Invalid email or password"));
-        if (user.getDeletedAt() != null || !user.isActive()) {
+        // Pessoa sem cadastro (placeholder) nunca faz login.
+        if (user.getDeletedAt() != null || !user.isActive() || user.isPlaceholder()) {
             throw new DomainException("Invalid email or password");
         }
         if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {

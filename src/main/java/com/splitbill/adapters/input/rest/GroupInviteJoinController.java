@@ -2,11 +2,13 @@ package com.splitbill.adapters.input.rest;
 
 import com.splitbill.application.dto.GroupInvitePreviewResponse;
 import com.splitbill.application.dto.GroupMemberResponse;
+import com.splitbill.application.dto.JoinInviteRequest;
 import com.splitbill.application.usecase.GroupInviteUseCase;
 import com.splitbill.infrastructure.security.CurrentUser;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -30,7 +32,11 @@ public class GroupInviteJoinController {
     }
 
     @PostMapping("/{inviteId}/join")
-    public GroupMemberResponse join(@PathVariable UUID inviteId) {
-        return invites.join(inviteId, currentUser.id());
+    public GroupMemberResponse join(
+            @PathVariable UUID inviteId,
+            @RequestBody(required = false) JoinInviteRequest request
+    ) {
+        // Sem corpo (versoes antigas do app) = entra como pessoa nova.
+        return invites.join(inviteId, currentUser.id(), request == null ? null : request.placeholderUserId());
     }
 }

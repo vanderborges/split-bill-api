@@ -36,7 +36,9 @@ class GroupInviteUseCaseTest {
     private final GroupMemberJpaRepository members = mock(GroupMemberJpaRepository.class);
     private final UserJpaRepository users = mock(UserJpaRepository.class);
     private final GroupUseCase groupRules = mock(GroupUseCase.class);
-    private final GroupInviteUseCase useCase = new GroupInviteUseCase(invites, groups, members, users, groupRules);
+    private final PlaceholderUseCase placeholders = mock(PlaceholderUseCase.class);
+    private final GroupInviteUseCase useCase =
+            new GroupInviteUseCase(invites, groups, members, users, groupRules, placeholders);
 
     private final UUID groupId = UUID.randomUUID();
     private final UUID adminId = UUID.randomUUID();
@@ -134,6 +136,42 @@ class GroupInviteUseCaseTest {
 
         assertThat(response.role()).isEqualTo(GroupMemberRole.ADMIN);
         verify(members, never()).save(any());
+    }
+
+    @Test
+    void joinWithPlaceholderDelegatesToClaim() {
+        GroupInviteJpaEntity current = invite(group, admin, true);
+        UUID joinerId = UUID.randomUUID();
+        UUID placeholderId = UUID.randomUUID();
+        UserJpaEntity joiner = activeUser(joinerId);
+        GroupMemberJpaEntity claimed = new GroupMemberJpaEntity();
+        claimed.setId(UUID.randomUUID());
+        claimed.setGroup(group);
+        claimed.setUser(joiner);
+        claimed.setRole(GroupMemberRole.MEMBER);
+        claimed.setActive(true);
+        when(invites.findById(current.getId())).thenReturn(Optional.of(current));
+        when(users.findById(joinerId)).thenReturn(Optional.of(joiner));
+        when(placeholders.claim(current, placeholderId, joiner)).thenReturn(claimed);
+
+        GroupMemberResponse response = useCase.join(current.getId(), joinerId, placeholderId);
+
+        assertThat(response.userId()).isEqualTo(joinerId);
+        verify(placeholders).claim(current, placeholderId, joiner);
+        verify(members, never()).save(any());
+    }
+
+    @Test
+    void joinWithoutPlaceholderNeverClaims() {
+        GroupInviteJpaEntity current = invite(group, admin, true);
+        UUID joinerId = UUID.randomUUID();
+        when(invites.findById(current.getId())).thenReturn(Optional.of(current));
+        when(users.findById(joinerId)).thenReturn(Optional.of(activeUser(joinerId)));
+        when(members.findByGroupIdAndUserId(groupId, joinerId)).thenReturn(Optional.empty());
+
+        useCase.join(current.getId(), joinerId, null);
+
+        verify(placeholders, never()).claim(any(), any(), any());
     }
 
     @Test

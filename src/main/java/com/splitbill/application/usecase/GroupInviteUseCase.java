@@ -28,19 +28,22 @@ public class GroupInviteUseCase {
     private final GroupMemberJpaRepository members;
     private final UserJpaRepository users;
     private final GroupUseCase groupRules;
+    private final PlaceholderUseCase placeholders;
 
     public GroupInviteUseCase(
             GroupInviteJpaRepository invites,
             GroupJpaRepository groups,
             GroupMemberJpaRepository members,
             UserJpaRepository users,
-            GroupUseCase groupRules
+            GroupUseCase groupRules,
+            PlaceholderUseCase placeholders
     ) {
         this.invites = invites;
         this.groups = groups;
         this.members = members;
         this.users = users;
         this.groupRules = groupRules;
+        this.placeholders = placeholders;
     }
 
     @Transactional
@@ -84,12 +87,26 @@ public class GroupInviteUseCase {
                 invite.getGroup().getName(),
                 invite.isActive(),
                 invite.getEvent() == null ? null : invite.getEvent().getId(),
-                invite.getEvent() == null ? null : invite.getEvent().getName()
+                invite.getEvent() == null ? null : invite.getEvent().getName(),
+                placeholders.claimableFor(invite).stream()
+                        .map(member -> new GroupInvitePreviewResponse.PlaceholderOption(
+                                member.getUser().getId(), member.getUser().getNickname()))
+                        .toList()
         );
     }
 
     @Transactional
     public GroupMemberResponse join(UUID inviteId, UUID requesterId) {
+        return join(inviteId, requesterId, null);
+    }
+
+    /**
+     * Entrar pelo convite. Com {@code placeholderUserId}: a pessoa disse ser
+     * aquele nome pre-cadastrado pelo admin e herda as despesas dele (ver
+     * {@link PlaceholderUseCase#claim}). Sem: entra como pessoa nova.
+     */
+    @Transactional
+    public GroupMemberResponse join(UUID inviteId, UUID requesterId, UUID placeholderUserId) {
         GroupInviteJpaEntity invite = activeInvite(inviteId);
         GroupJpaEntity group = invite.getGroup();
         UserJpaEntity user = users.findById(requesterId)
@@ -102,6 +119,9 @@ public class GroupInviteUseCase {
         if (temporaryEvent != null) {
             // Valida que o evento do convite ainda aceita gente (nao fechado/apagado).
             groupRules.requireOpenEventOfGroup(group.getId(), temporaryEvent.getId());
+        }
+        if (placeholderUserId != null) {
+            return toMemberResponse(placeholders.claim(invite, placeholderUserId, user));
         }
 
         GroupMemberJpaEntity member = members.findByGroupIdAndUserId(group.getId(), requesterId).orElse(null);
