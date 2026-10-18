@@ -4,20 +4,16 @@ import com.splitbill.application.dto.CreateEventRequest;
 import com.splitbill.application.dto.EventResponse;
 import com.splitbill.application.dto.StartSettlementRequest;
 import com.splitbill.domain.exception.DomainException;
-import com.splitbill.domain.service.ExpenseSplitCalculator;
 import com.splitbill.domain.valueobject.EventStatus;
 import com.splitbill.domain.valueobject.EventType;
 import com.splitbill.domain.valueobject.MonthStatus;
 import com.splitbill.domain.valueobject.SettlementStatus;
-import com.splitbill.domain.valueobject.ParticipantShare;
-import com.splitbill.domain.valueobject.ParticipantSplit;
 import com.splitbill.infrastructure.persistence.entity.EventJpaEntity;
 import com.splitbill.infrastructure.persistence.entity.ExpenseJpaEntity;
 import com.splitbill.infrastructure.persistence.entity.ExpensePayerJpaEntity;
 import com.splitbill.infrastructure.persistence.entity.ExpenseParticipantJpaEntity;
 import com.splitbill.infrastructure.persistence.entity.GroupJpaEntity;
 import com.splitbill.infrastructure.persistence.entity.GroupMemberJpaEntity;
-import com.splitbill.infrastructure.persistence.entity.InstallmentGroupJpaEntity;
 import com.splitbill.infrastructure.persistence.entity.MonthJpaEntity;
 import com.splitbill.infrastructure.persistence.entity.UserJpaEntity;
 import com.splitbill.infrastructure.persistence.repository.EventJpaRepository;
@@ -39,12 +35,9 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
-import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
 import java.util.UUID;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 
 @Service
 public class EventUseCase {
@@ -60,7 +53,7 @@ public class EventUseCase {
     private final GroupMemberJpaRepository groupMembers;
     private final GroupUseCase groupRules;
     private final EventSettlementUseCase settlements;
-    private final ExpenseSplitCalculator splitCalculator = new ExpenseSplitCalculator();
+    private final InstallmentRolloverService rollover;
 
     public EventUseCase(
             EventJpaRepository events,
@@ -71,7 +64,8 @@ public class EventUseCase {
             GroupJpaRepository groups,
             GroupMemberJpaRepository groupMembers,
             GroupUseCase groupRules,
-            EventSettlementUseCase settlements
+            EventSettlementUseCase settlements,
+            InstallmentRolloverService rollover
     ) {
         this.events = events;
         this.months = months;
@@ -82,6 +76,7 @@ public class EventUseCase {
         this.groupMembers = groupMembers;
         this.groupRules = groupRules;
         this.settlements = settlements;
+        this.rollover = rollover;
     }
 
     // Temporario so enxerga o evento ao qual esta amarrado.
@@ -151,7 +146,11 @@ public class EventUseCase {
         event.setGroup(group);
         event.setCreatedAt(LocalDateTime.now());
 
-        return toResponse(events.save(event));
+        events.save(event);
+        if (event.getType() == EventType.MONTHLY) {
+            bringInstallmentsFromPreviousMonth(event);
+        }
+        return toResponse(event);
     }
 
     /**
@@ -333,73 +332,36 @@ public class EventUseCase {
                 .filter(expense -> expense.getInstallmentGroup() != null)
                 .toList();
         Set<UUID> processedInstallmentGroups = new HashSet<>();
+        EventJpaEntity targetEvent = null;
 
         for (ExpenseJpaEntity eventExpense : eventExpenses) {
-            InstallmentGroupJpaEntity installmentGroup = eventExpense.getInstallmentGroup();
-            UUID installmentGroupId = installmentGroup.getId();
-            if (!processedInstallmentGroups.add(installmentGroupId)) {
+            if (!processedInstallmentGroups.add(eventExpense.getInstallmentGroup().getId())) {
                 continue;
             }
-            if (eventExpense.getInstallmentNumber() == null) {
+            // Ja existe a proxima (em qualquer evento - inclusive a que ja
+            // entrou no mes seguinte aberto) ou a serie acabou: nao duplica.
+            Optional<Integer> nextInstallmentNumber = rollover.pendingNextNumber(eventExpense);
+            if (nextInstallmentNumber.isEmpty()) {
                 continue;
             }
-            int nextInstallmentNumber = eventExpense.getInstallmentNumber() + 1;
-
-            // Assinatura: sem numero fixo de parcelas, so para quando alguem
-            // cancela (ver ExpenseUseCase#cancelSubscription). Parcelamento
-            // comum: para quando atinge o total contratado.
-            if (installmentGroup.isSubscription()) {
-                if (installmentGroup.getCancelledAt() != null) {
-                    continue;
-                }
-            } else if (eventExpense.getTotalInstallments() == null
-                    || nextInstallmentNumber > eventExpense.getTotalInstallments()) {
-                continue;
+            if (targetEvent == null) {
+                targetEvent = resolveRolloverTarget(event);
             }
-
-            List<ExpenseJpaEntity> groupExpenses = expenses.findByInstallmentGroupIdAndDeletedAtIsNull(
-                    installmentGroupId
-            );
-            Map<Integer, ExpenseJpaEntity> expensesByInstallment = groupExpenses.stream()
-                    .filter(expense -> expense.getInstallmentNumber() != null)
-                    .collect(Collectors.toMap(ExpenseJpaEntity::getInstallmentNumber, Function.identity(), (first, ignored) -> first));
-            if (expensesByInstallment.containsKey(nextInstallmentNumber)) {
-                continue;
-            }
-
-            ExpenseJpaEntity template = expensesByInstallment.getOrDefault(eventExpense.getInstallmentNumber(), eventExpense);
-            BigDecimal nextAmount = template.getInstallmentGroup().getTotalAmount();
-            // Divisao por valor: a proxima parcela repete os mesmos valores por
-            // pessoa (so faz sentido se o valor da parcela for o mesmo; se nao
-            // for, cai na divisao por cotas).
-            boolean copyAmounts = template.isCustomSplit()
-                    && template.getAmount().compareTo(nextAmount) == 0;
-            List<ParticipantSplit> participants = template.getParticipants().stream()
-                    .map(participant -> new ParticipantSplit(
-                            participant.getUser().getId(),
-                            participant.getShareCount(),
-                            participant.getShareDescription(),
-                            copyAmounts ? participant.getShareAmount() : null
-                    ))
-                    .toList();
-            EventJpaEntity targetEvent = resolveRolloverTarget(event);
-            if (targetEvent.getStatus() == EventStatus.CLOSED) {
-                throw new DomainException("Cannot create next installment in a closed monthly event");
-            }
-            // Mantem a data cadastrada originalmente (a da 1a parcela) em vez de
-            // mover pro mes do evento de destino - assim a parcela que tombou
-            // fica no fim da lista (ordenada da mais recente pra mais antiga).
-            LocalDate originalDate = expensesByInstallment.getOrDefault(1, template).getExpenseDate();
-            createInstallmentExpense(
-                    template,
-                    targetEvent,
-                    targetEvent.getMonth(),
-                    participants,
-                    nextAmount,
-                    nextInstallmentNumber,
-                    originalDate
-            );
+            rollover.createNext(eventExpense, targetEvent, nextInstallmentNumber.get());
         }
+    }
+
+    /**
+     * Com o mes anterior ainda aberto, o evento mensal novo ja nasce com as
+     * proximas parcelas/assinaturas dele - sem esperar o "Fechar evento" do
+     * anterior (que depois so pula as que ja existem).
+     */
+    private void bringInstallmentsFromPreviousMonth(EventJpaEntity event) {
+        rollover.previousMonthlyEvent(event)
+                .filter(previous -> previous.getStatus() == EventStatus.OPEN)
+                .ifPresent(previous -> expenses.findByEventIdAndDeletedAtIsNull(previous.getId()).stream()
+                        .filter(expense -> expense.getInstallmentGroup() != null)
+                        .forEach(rollover::propagateForward));
     }
 
     /**
@@ -433,58 +395,6 @@ public class EventUseCase {
         YearMonth nextReference = sourceReference.plusMonths(1);
         MonthJpaEntity month = findOrCreateMonth(nextReference.getMonthValue(), nextReference.getYear());
         return ensureMonthlyEvent(month, sourceEvent.getGroup());
-    }
-
-    private void createInstallmentExpense(
-            ExpenseJpaEntity template,
-            EventJpaEntity targetEvent,
-            MonthJpaEntity month,
-            List<ParticipantSplit> participants,
-            BigDecimal amount,
-            int installmentNumber,
-            LocalDate expenseDate
-    ) {
-        LocalDateTime now = LocalDateTime.now();
-        ExpenseJpaEntity expense = new ExpenseJpaEntity();
-        expense.setId(UUID.randomUUID());
-        expense.setDescription(template.getInstallmentGroup().getDescription());
-        expense.setAmount(amount);
-        expense.setExpenseDate(expenseDate);
-        expense.setCategory(template.getCategory());
-        expense.setPayer(template.getPayer());
-        expense.setCreatedBy(template.getCreatedBy());
-        expense.setMonth(month);
-        expense.setEvent(targetEvent);
-        expense.setInstallmentGroup(template.getInstallmentGroup());
-        expense.setInstallmentNumber(installmentNumber);
-        expense.setTotalInstallments(template.getTotalInstallments());
-        expense.setCustomSplit(participants.stream().anyMatch(participant -> participant.fixedAmount() != null));
-        expense.setCreatedAt(now);
-        expense.setUpdatedAt(now);
-
-        for (ParticipantShare share : splitCalculator.splitByShares(amount, participants)) {
-            ExpenseParticipantJpaEntity participant = new ExpenseParticipantJpaEntity();
-            participant.setId(UUID.randomUUID());
-            participant.setExpense(expense);
-            participant.setUser(template.getParticipants().stream()
-                    .filter(item -> item.getUser().getId().equals(share.userId()))
-                    .findFirst()
-                    .orElseThrow(() -> new DomainException("Installment participant not found"))
-                    .getUser());
-            participant.setShareAmount(share.amount());
-            participant.setShareCount(share.shareCount());
-            participant.setShareDescription(share.shareDescription());
-            expense.getParticipants().add(participant);
-        }
-
-        ExpensePayerJpaEntity payer = new ExpensePayerJpaEntity();
-        payer.setId(UUID.randomUUID());
-        payer.setExpense(expense);
-        payer.setUser(template.getPayer());
-        payer.setPaidAmount(amount);
-        expense.getPayers().add(payer);
-
-        expenses.save(expense);
     }
 
     @Transactional

@@ -54,6 +54,7 @@ public class ExpenseUseCase {
     private final GroupJpaRepository groups;
     private final GroupMemberJpaRepository groupMembers;
     private final EntityManager entityManager;
+    private final InstallmentRolloverService rollover;
     private final ExpenseSplitCalculator splitCalculator = new ExpenseSplitCalculator();
 
     public ExpenseUseCase(
@@ -64,7 +65,8 @@ public class ExpenseUseCase {
             InstallmentGroupJpaRepository installmentGroups,
             GroupJpaRepository groups,
             GroupMemberJpaRepository groupMembers,
-            EntityManager entityManager
+            EntityManager entityManager,
+            InstallmentRolloverService rollover
     ) {
         this.expenses = expenses;
         this.users = users;
@@ -74,6 +76,7 @@ public class ExpenseUseCase {
         this.groups = groups;
         this.groupMembers = groupMembers;
         this.entityManager = entityManager;
+        this.rollover = rollover;
     }
 
     @Transactional(readOnly = true)
@@ -147,6 +150,12 @@ public class ExpenseUseCase {
         expense.setMonth(month);
         fillExpense(expense, request, request.description(), request.amount(), expense.getInstallmentNumber(), expense.getTotalInstallments());
         expense.setUpdatedAt(LocalDateTime.now());
+        if (expense.getInstallmentGroup() != null) {
+            // Parcelas seguintes ja colocadas nos meses abertos sao refeitas
+            // com os dados novos (como seria no "Fechar evento").
+            rollover.discardForward(expense);
+            rollover.propagateForward(expense);
+        }
         return toResponse(expense);
     }
 
@@ -162,6 +171,9 @@ public class ExpenseUseCase {
         }
         requireExpenseChangePermission(expense, requesterId);
         expense.setDeletedAt(LocalDateTime.now());
+        // Apagar uma parcela encerra a serie dali pra frente: tira tambem as
+        // seguintes que ja estavam nos meses abertos.
+        rollover.discardForward(expense);
     }
 
     /**
@@ -184,6 +196,9 @@ public class ExpenseUseCase {
         }
         if (group.getCancelledAt() == null) {
             group.setCancelledAt(LocalDateTime.now());
+            // A deste mes fica; a(s) que ja tinham entrado no(s) mes(es)
+            // seguinte(s) aberto(s) saem.
+            rollover.discardForward(expense);
         }
         return toResponse(expense);
     }
@@ -230,7 +245,9 @@ public class ExpenseUseCase {
         expense.setUpdatedAt(now);
 
         fillExpense(expense, request, request.description(), request.amount(), 1, request.installments());
-        return toResponse(expenses.save(expense));
+        ExpenseJpaEntity saved = expenses.save(expense);
+        rollover.propagateForward(saved);
+        return toResponse(saved);
     }
 
     /**
@@ -282,7 +299,9 @@ public class ExpenseUseCase {
         expense.setUpdatedAt(now);
 
         fillExpense(expense, request, request.description(), request.amount(), 1, null);
-        return toResponse(expenses.save(expense));
+        ExpenseJpaEntity saved = expenses.save(expense);
+        rollover.propagateForward(saved);
+        return toResponse(saved);
     }
 
     private void validateMonthlyInstallmentEvent(EventJpaEntity event) {

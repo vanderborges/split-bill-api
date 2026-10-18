@@ -22,6 +22,10 @@ public interface ExpenseJpaRepository extends JpaRepository<ExpenseJpaEntity, UU
 
     List<ExpenseJpaEntity> findByInstallmentGroupIdAndDeletedAtIsNull(UUID installmentGroupId);
 
+    // Inclui as apagadas: parcela apagada pelo usuario encerra a serie
+    // (ver InstallmentRolloverService).
+    List<ExpenseJpaEntity> findByInstallmentGroupId(UUID installmentGroupId);
+
     @Query("""
             select distinct expense
             from ExpenseJpaEntity expense
