@@ -50,6 +50,22 @@ public class NotificationJpaEntity {
     @Column(name = "receiver_name")
     private String receiverName;
 
+    // BILLING (cobranca) ou MEMBER_JOINED (aviso pros admins de que alguem
+    // entrou no grupo) - ver NotificationUseCase.
+    @Column(nullable = false)
+    private String type = TYPE_BILLING;
+
+    public static final String TYPE_BILLING = "BILLING";
+    public static final String TYPE_MEMBER_JOINED = "MEMBER_JOINED";
+
+    public String getType() {
+        return type;
+    }
+
+    public void setType(String type) {
+        this.type = type;
+    }
+
     public UUID getId() {
         return id;
     }

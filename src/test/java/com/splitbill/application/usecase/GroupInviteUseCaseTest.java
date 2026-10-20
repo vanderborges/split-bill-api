@@ -8,24 +8,29 @@ import com.splitbill.domain.valueobject.GroupMemberRole;
 import com.splitbill.infrastructure.persistence.entity.GroupInviteJpaEntity;
 import com.splitbill.infrastructure.persistence.entity.GroupJpaEntity;
 import com.splitbill.infrastructure.persistence.entity.GroupMemberJpaEntity;
+import com.splitbill.infrastructure.persistence.entity.NotificationJpaEntity;
 import com.splitbill.infrastructure.persistence.entity.UserJpaEntity;
 import com.splitbill.infrastructure.persistence.repository.GroupInviteJpaRepository;
 import com.splitbill.infrastructure.persistence.repository.GroupJpaRepository;
 import com.splitbill.infrastructure.persistence.repository.GroupMemberJpaRepository;
+import com.splitbill.infrastructure.persistence.repository.NotificationJpaRepository;
 import com.splitbill.infrastructure.persistence.repository.UserJpaRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -37,8 +42,9 @@ class GroupInviteUseCaseTest {
     private final UserJpaRepository users = mock(UserJpaRepository.class);
     private final GroupUseCase groupRules = mock(GroupUseCase.class);
     private final PlaceholderUseCase placeholders = mock(PlaceholderUseCase.class);
+    private final NotificationJpaRepository notifications = mock(NotificationJpaRepository.class);
     private final GroupInviteUseCase useCase =
-            new GroupInviteUseCase(invites, groups, members, users, groupRules, placeholders);
+            new GroupInviteUseCase(invites, groups, members, users, groupRules, placeholders, notifications);
 
     private final UUID groupId = UUID.randomUUID();
     private final UUID adminId = UUID.randomUUID();
@@ -175,6 +181,44 @@ class GroupInviteUseCaseTest {
     }
 
     @Test
+    void joinNotifiesGroupAdminsWithGroupNameInMessage() {
+        GroupInviteJpaEntity current = invite(group, admin, true);
+        UUID joinerId = UUID.randomUUID();
+        UserJpaEntity joiner = activeUser(joinerId);
+        joiner.setNickname("Maria");
+        when(invites.findById(current.getId())).thenReturn(Optional.of(current));
+        when(users.findById(joinerId)).thenReturn(Optional.of(joiner));
+        when(users.getReferenceById(joinerId)).thenReturn(joiner);
+        when(members.findByGroupIdAndUserId(groupId, joinerId)).thenReturn(Optional.empty());
+        UserJpaEntity plainMember = activeUser(UUID.randomUUID());
+        when(members.findByGroupIdAndActiveTrue(groupId)).thenReturn(List.of(
+                member(admin, GroupMemberRole.ADMIN),
+                member(plainMember, GroupMemberRole.MEMBER)));
+
+        useCase.join(current.getId(), joinerId);
+
+        verify(notifications, times(1)).save(argThat((NotificationJpaEntity n) ->
+                n.getRecipient() == admin
+                        && NotificationJpaEntity.TYPE_MEMBER_JOINED.equals(n.getType())
+                        && n.getMessage().equals("Viagem Praia: Maria entrou no grupo.")));
+    }
+
+    @Test
+    void joinDoesNotNotifyWhenAlreadyActiveMember() {
+        GroupInviteJpaEntity current = invite(group, admin, true);
+        UUID memberId = UUID.randomUUID();
+        UserJpaEntity memberUser = activeUser(memberId);
+        GroupMemberJpaEntity existing = member(memberUser, GroupMemberRole.MEMBER);
+        when(invites.findById(current.getId())).thenReturn(Optional.of(current));
+        when(users.findById(memberId)).thenReturn(Optional.of(memberUser));
+        when(members.findByGroupIdAndUserId(groupId, memberId)).thenReturn(Optional.of(existing));
+
+        useCase.join(current.getId(), memberId);
+
+        verify(notifications, never()).save(any());
+    }
+
+    @Test
     void joinRejectsInactiveInvite() {
         GroupInviteJpaEntity current = invite(group, admin, false);
         when(invites.findById(current.getId())).thenReturn(Optional.of(current));
@@ -188,6 +232,16 @@ class GroupInviteUseCaseTest {
         GroupJpaEntity entity = new GroupJpaEntity();
         entity.setId(groupId);
         entity.setName("Viagem Praia");
+        entity.setActive(true);
+        return entity;
+    }
+
+    private GroupMemberJpaEntity member(UserJpaEntity user, GroupMemberRole role) {
+        GroupMemberJpaEntity entity = new GroupMemberJpaEntity();
+        entity.setId(UUID.randomUUID());
+        entity.setGroup(group);
+        entity.setUser(user);
+        entity.setRole(role);
         entity.setActive(true);
         return entity;
     }

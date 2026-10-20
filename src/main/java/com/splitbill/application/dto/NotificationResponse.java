@@ -11,6 +11,7 @@ public record NotificationResponse(
         Instant createdAt,
         Instant readAt,
         String pixKey,
-        String receiverName
+        String receiverName,
+        String type
 ) {
 }

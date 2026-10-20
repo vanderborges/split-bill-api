@@ -178,7 +178,10 @@ public class NotificationUseCase {
                 .filter(suggestion -> suggestion.fromUserId().equals(settlement.userId()))
                 .toList();
 
-        StringBuilder message = new StringBuilder("DividiAí: no evento ")
+        // Comeca pelo nome do grupo: quem esta em mais de um grupo nao sabia
+        // de qual era a cobranca so pelo nome do evento (ex.: "10/2026").
+        StringBuilder message = new StringBuilder(event.getGroup().getName())
+                .append(": no evento ")
                 .append(event.getName())
                 .append(" você tem ")
                 .append(formatCurrency(settlement.amount()))
@@ -241,7 +244,8 @@ public class NotificationUseCase {
                         ? null
                         : notification.getReadAt().toInstant(ZoneOffset.UTC),
                 notification.getPixKey(),
-                notification.getReceiverName()
+                notification.getReceiverName(),
+                notification.getType()
         );
     }
 }

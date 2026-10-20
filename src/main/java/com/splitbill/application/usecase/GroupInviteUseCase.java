@@ -9,15 +9,18 @@ import com.splitbill.infrastructure.persistence.entity.EventJpaEntity;
 import com.splitbill.infrastructure.persistence.entity.GroupInviteJpaEntity;
 import com.splitbill.infrastructure.persistence.entity.GroupJpaEntity;
 import com.splitbill.infrastructure.persistence.entity.GroupMemberJpaEntity;
+import com.splitbill.infrastructure.persistence.entity.NotificationJpaEntity;
 import com.splitbill.infrastructure.persistence.entity.UserJpaEntity;
 import com.splitbill.infrastructure.persistence.repository.GroupInviteJpaRepository;
 import com.splitbill.infrastructure.persistence.repository.GroupJpaRepository;
 import com.splitbill.infrastructure.persistence.repository.GroupMemberJpaRepository;
+import com.splitbill.infrastructure.persistence.repository.NotificationJpaRepository;
 import com.splitbill.infrastructure.persistence.repository.UserJpaRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.UUID;
 
 @Service
@@ -29,6 +32,7 @@ public class GroupInviteUseCase {
     private final UserJpaRepository users;
     private final GroupUseCase groupRules;
     private final PlaceholderUseCase placeholders;
+    private final NotificationJpaRepository notifications;
 
     public GroupInviteUseCase(
             GroupInviteJpaRepository invites,
@@ -36,7 +40,8 @@ public class GroupInviteUseCase {
             GroupMemberJpaRepository members,
             UserJpaRepository users,
             GroupUseCase groupRules,
-            PlaceholderUseCase placeholders
+            PlaceholderUseCase placeholders,
+            NotificationJpaRepository notifications
     ) {
         this.invites = invites;
         this.groups = groups;
@@ -44,6 +49,7 @@ public class GroupInviteUseCase {
         this.users = users;
         this.groupRules = groupRules;
         this.placeholders = placeholders;
+        this.notifications = notifications;
     }
 
     @Transactional
@@ -120,11 +126,24 @@ public class GroupInviteUseCase {
             // Valida que o evento do convite ainda aceita gente (nao fechado/apagado).
             groupRules.requireOpenEventOfGroup(group.getId(), temporaryEvent.getId());
         }
+        GroupMemberJpaEntity member = members.findByGroupIdAndUserId(group.getId(), requesterId).orElse(null);
+        boolean alreadyMember = member != null && member.isActive();
         if (placeholderUserId != null) {
-            return toMemberResponse(placeholders.claim(invite, placeholderUserId, user));
+            String placeholderName = users.findById(placeholderUserId)
+                    .map(UserJpaEntity::getNickname)
+                    .orElse(null);
+            String groupName = group.getName();
+            String userName = user.getNickname();
+            GroupMemberResponse claimed = toMemberResponse(placeholders.claim(invite, placeholderUserId, user));
+            if (!alreadyMember) {
+                // claim() limpa o EntityManager: so ids/nomes lidos antes.
+                notifyAdminsOfNewMember(group.getId(), groupName, requesterId, userName,
+                        temporaryEvent == null ? null : temporaryEvent.getName(),
+                        placeholderName);
+            }
+            return claimed;
         }
 
-        GroupMemberJpaEntity member = members.findByGroupIdAndUserId(group.getId(), requesterId).orElse(null);
         LocalDateTime now = LocalDateTime.now();
         if (member != null && member.isActive()) {
             if (member.isTemporary()) {
@@ -150,7 +169,58 @@ public class GroupInviteUseCase {
         member.setTemporary(temporaryEvent != null);
         member.setTemporaryEvent(temporaryEvent);
         member.setUpdatedAt(now);
-        return toMemberResponse(members.save(member));
+        GroupMemberResponse joined = toMemberResponse(members.save(member));
+        notifyAdminsOfNewMember(group.getId(), group.getName(), requesterId, user.getNickname(),
+                temporaryEvent == null ? null : temporaryEvent.getName(),
+                null);
+        return joined;
+    }
+
+    /**
+     * Avisa os admins do grupo (in-app, como a cobranca) que alguem entrou
+     * pelo convite. Nao avisa quem ja era integrante nem o proprio admin que
+     * entrou; pessoa sem cadastro nunca recebe notificacao.
+     */
+    private void notifyAdminsOfNewMember(
+            UUID groupId,
+            String groupName,
+            UUID newUserId,
+            String newUserName,
+            String temporaryEventName,
+            String placeholderName
+    ) {
+        StringBuilder message = new StringBuilder(groupName)
+                .append(": ")
+                .append(newUserName)
+                .append(" entrou no grupo");
+        if (temporaryEventName != null) {
+            message.append(" como temporário no evento ").append(temporaryEventName);
+        }
+        if (placeholderName != null && !placeholderName.equals(newUserName)) {
+            message.append(" no lugar de \"").append(placeholderName).append("\" (sem cadastro)");
+        }
+        message.append(".");
+        String text = message.length() > 500 ? message.substring(0, 500) : message.toString();
+
+        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
+        UserJpaEntity author = users.getReferenceById(newUserId);
+        members.findByGroupIdAndActiveTrue(groupId).stream()
+                .filter(admin -> admin.getRole() == GroupMemberRole.ADMIN)
+                .map(GroupMemberJpaEntity::getUser)
+                .filter(admin -> !admin.getId().equals(newUserId) && !admin.isPlaceholder())
+                .forEach(admin -> {
+                    NotificationJpaEntity notification = new NotificationJpaEntity();
+                    notification.setId(UUID.randomUUID());
+                    notification.setRecipient(admin);
+                    // Sem evento: o aviso e do grupo (o evento do temporario
+                    // ja vai no texto).
+                    notification.setEvent(null);
+                    notification.setMessage(text);
+                    notification.setType(NotificationJpaEntity.TYPE_MEMBER_JOINED);
+                    notification.setCreatedBy(author);
+                    notification.setCreatedAt(now);
+                    notifications.save(notification);
+                });
     }
 
     private GroupInviteJpaEntity createInvite(GroupJpaEntity group, UUID requesterId, EventJpaEntity event) {
