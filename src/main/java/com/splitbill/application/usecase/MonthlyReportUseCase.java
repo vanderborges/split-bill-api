@@ -130,7 +130,7 @@ public class MonthlyReportUseCase {
         UserJpaEntity receiver = event.getGroup().getReceiver();
         if (receiver != null) {
             BigDecimal zero = BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
-            return activeBalances.stream()
+            List<PaymentSuggestionResponse> suggestions = new ArrayList<>(activeBalances.stream()
                     .filter(balance -> balance.balance().compareTo(zero) < 0
                             && !balance.userId().equals(receiver.getId()))
                     .map(balance -> new PaymentSuggestionResponse(
@@ -139,7 +139,23 @@ public class MonthlyReportUseCase {
                             receiver.getId(),
                             receiver.getNickname(),
                             balance.balance().abs()))
-                    .toList();
+                    .toList());
+            // O proprio recebedor tambem pode estar devendo: nao paga pra si
+            // mesmo, paga pros credores. Sem isso a cobranca dele saia sem
+            // destinatario nem PIX ("Combine com o grupo...").
+            activeBalances.stream()
+                    .filter(balance -> balance.userId().equals(receiver.getId())
+                            && balance.balance().compareTo(zero) < 0)
+                    .findFirst()
+                    .ifPresent(receiverDebt -> {
+                        List<MonthlyBalanceResponse> receiverAndCreditors = new ArrayList<>();
+                        receiverAndCreditors.add(receiverDebt);
+                        activeBalances.stream()
+                                .filter(balance -> balance.balance().compareTo(zero) > 0)
+                                .forEach(receiverAndCreditors::add);
+                        suggestions.addAll(matchDebtorsToCreditors(receiverAndCreditors));
+                    });
+            return suggestions;
         }
 
         return matchDebtorsToCreditors(activeBalances);
