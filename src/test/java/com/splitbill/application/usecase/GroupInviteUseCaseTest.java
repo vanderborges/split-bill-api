@@ -44,7 +44,8 @@ class GroupInviteUseCaseTest {
     private final PlaceholderUseCase placeholders = mock(PlaceholderUseCase.class);
     private final NotificationJpaRepository notifications = mock(NotificationJpaRepository.class);
     private final GroupInviteUseCase useCase =
-            new GroupInviteUseCase(invites, groups, members, users, groupRules, placeholders, notifications);
+            new GroupInviteUseCase(invites, groups, members, users, groupRules, placeholders, notifications,
+                    mock(org.springframework.context.ApplicationEventPublisher.class));
 
     private final UUID groupId = UUID.randomUUID();
     private final UUID adminId = UUID.randomUUID();

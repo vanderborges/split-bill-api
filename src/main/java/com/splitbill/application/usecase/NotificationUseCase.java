@@ -12,6 +12,8 @@ import com.splitbill.infrastructure.persistence.entity.UserJpaEntity;
 import com.splitbill.infrastructure.persistence.repository.EventJpaRepository;
 import com.splitbill.infrastructure.persistence.repository.NotificationJpaRepository;
 import com.splitbill.infrastructure.persistence.repository.UserJpaRepository;
+import com.splitbill.application.event.NotificationCreatedEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,6 +36,7 @@ public class NotificationUseCase {
     private final EventSettlementUseCase settlements;
     private final GroupUseCase groupRules;
     private final MonthlyReportUseCase reports;
+    private final ApplicationEventPublisher eventPublisher;
 
     public NotificationUseCase(
             NotificationJpaRepository notifications,
@@ -41,7 +44,8 @@ public class NotificationUseCase {
             UserJpaRepository users,
             EventSettlementUseCase settlements,
             GroupUseCase groupRules,
-            MonthlyReportUseCase reports
+            MonthlyReportUseCase reports,
+            ApplicationEventPublisher eventPublisher
     ) {
         this.notifications = notifications;
         this.events = events;
@@ -49,6 +53,7 @@ public class NotificationUseCase {
         this.settlements = settlements;
         this.groupRules = groupRules;
         this.reports = reports;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional(readOnly = true)
@@ -153,6 +158,8 @@ public class NotificationUseCase {
             notification.setCreatedBy(actingAs);
             notification.setCreatedAt(now);
             notifications.save(notification);
+            eventPublisher.publishEvent(new NotificationCreatedEvent(
+                    notification.getId(), recipient.getId(), notification.getMessage(), notification.getType()));
             sent++;
         }
 

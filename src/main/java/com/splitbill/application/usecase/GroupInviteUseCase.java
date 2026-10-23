@@ -16,6 +16,8 @@ import com.splitbill.infrastructure.persistence.repository.GroupJpaRepository;
 import com.splitbill.infrastructure.persistence.repository.GroupMemberJpaRepository;
 import com.splitbill.infrastructure.persistence.repository.NotificationJpaRepository;
 import com.splitbill.infrastructure.persistence.repository.UserJpaRepository;
+import com.splitbill.application.event.NotificationCreatedEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,6 +35,7 @@ public class GroupInviteUseCase {
     private final GroupUseCase groupRules;
     private final PlaceholderUseCase placeholders;
     private final NotificationJpaRepository notifications;
+    private final ApplicationEventPublisher events;
 
     public GroupInviteUseCase(
             GroupInviteJpaRepository invites,
@@ -41,7 +44,8 @@ public class GroupInviteUseCase {
             UserJpaRepository users,
             GroupUseCase groupRules,
             PlaceholderUseCase placeholders,
-            NotificationJpaRepository notifications
+            NotificationJpaRepository notifications,
+            ApplicationEventPublisher events
     ) {
         this.invites = invites;
         this.groups = groups;
@@ -50,6 +54,7 @@ public class GroupInviteUseCase {
         this.groupRules = groupRules;
         this.placeholders = placeholders;
         this.notifications = notifications;
+        this.events = events;
     }
 
     @Transactional
@@ -220,6 +225,8 @@ public class GroupInviteUseCase {
                     notification.setCreatedBy(author);
                     notification.setCreatedAt(now);
                     notifications.save(notification);
+                    events.publishEvent(new NotificationCreatedEvent(
+                            notification.getId(), admin.getId(), text, notification.getType()));
                 });
     }
 
