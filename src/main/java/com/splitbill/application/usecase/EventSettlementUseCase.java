@@ -18,11 +18,11 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -57,26 +57,43 @@ public class EventSettlementUseCase {
         groupRules.requireEventAccess(event, requesterId);
         LocalDateTime now = LocalDateTime.now();
 
+        // Uma consulta so pras linhas do evento (antes era uma por pessoa).
+        List<EventSettlementJpaEntity> eventSettlements = new ArrayList<>(settlements.findByEventId(eventId));
+        Map<UUID, EventSettlementJpaEntity> byUser = new HashMap<>();
+        eventSettlements.forEach(settlement -> byUser.put(settlement.getUser().getId(), settlement));
+
         for (MonthlyReportUseCase.BalanceResult balance : reports.calculateBalances(eventId)) {
-            Optional<EventSettlementJpaEntity> existing = settlements.findByEventIdAndUserId(eventId, balance.userId());
-            EventSettlementJpaEntity settlement = existing
-                    .orElseGet(() -> createSettlement(event, balance.userId(), now));
+            EventSettlementJpaEntity existing = byUser.get(balance.userId());
+            EventSettlementJpaEntity settlement = existing;
+            if (settlement == null) {
+                settlement = createSettlement(event, balance.userId(), now);
+                eventSettlements.add(settlement);
+            }
             BigDecimal previousAmount = settlement.getAmount();
             SettlementStatus previousStatus = normalizeStatus(settlement.getStatus());
             BigDecimal amount = balance.balance().abs().setScale(MONEY_SCALE, RoundingMode.HALF_UP);
-            settlement.setRole(roleFrom(balance.balance()));
-            settlement.setAmount(amount);
-            settlement.setUpdatedAt(now);
+            SettlementRole role = roleFrom(balance.balance());
             // Evento fechado ja foi todo acertado: linha que so nasce agora
             // (ninguem tinha aberto o relatorio antes de fechar, ou fechado
             // por ajuste de dados como a V23) entra como paga, nao pendente.
-            settlement.setStatus(existing.isEmpty() && event.getStatus() == EventStatus.CLOSED
+            SettlementStatus status = existing == null && event.getStatus() == EventStatus.CLOSED
                     ? SettlementStatus.PAID
-                    : defaultStatus(amount, previousAmount, previousStatus));
+                    : defaultStatus(amount, previousAmount, previousStatus);
+            // So grava quando algo mudou: abrir o relatorio fazia um UPDATE
+            // por pessoa toda vez, so por causa do updatedAt.
+            boolean changed = settlement.getRole() != role
+                    || previousAmount == null || previousAmount.compareTo(amount) != 0
+                    || settlement.getStatus() != status;
+            if (changed) {
+                settlement.setRole(role);
+                settlement.setAmount(amount);
+                settlement.setStatus(status);
+                settlement.setUpdatedAt(now);
+            }
         }
-        syncLinkedSettlements(settlements.findByEventId(eventId), now);
+        syncLinkedSettlements(eventSettlements, now);
 
-        return settlements.findByEventId(eventId).stream()
+        return eventSettlements.stream()
                 .sorted(Comparator.comparing(settlement -> settlement.getUser().getNickname()))
                 .map(this::toResponse)
                 .toList();

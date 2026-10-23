@@ -32,8 +32,10 @@ import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.util.ArrayDeque;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Queue;
 import java.util.Set;
@@ -80,13 +82,9 @@ public class EventUseCase {
     }
 
     // Temporario so enxerga o evento ao qual esta amarrado.
-    private boolean visibleTo(EventJpaEntity event, UUID viewerUserId) {
-        if (viewerUserId == null) {
-            return true;
-        }
-        return groupMembers.findByGroupIdAndUserId(event.getGroup().getId(), viewerUserId)
-                .map(member -> member.participatesIn(event.getId()))
-                .orElse(true);
+    private boolean visibleTo(EventJpaEntity event, Map<UUID, GroupMemberJpaEntity> viewerMembership) {
+        GroupMemberJpaEntity member = viewerMembership.get(event.getGroup().getId());
+        return member == null || member.participatesIn(event.getId());
     }
 
     @Transactional(readOnly = true)
@@ -106,8 +104,15 @@ public class EventUseCase {
                     .filter(event -> event.getDeletedAt() == null)
                     .toList();
         }
+        // Participacao do viewer em cada grupo carregada uma vez so (antes
+        // era uma consulta por evento da lista).
+        Map<UUID, GroupMemberJpaEntity> viewerMembership = new HashMap<>();
+        if (viewerUserId != null) {
+            groupMembers.findByUserId(viewerUserId)
+                    .forEach(member -> viewerMembership.put(member.getGroup().getId(), member));
+        }
         return source.stream()
-                .filter(event -> visibleTo(event, viewerUserId))
+                .filter(event -> visibleTo(event, viewerMembership))
                 .sorted(Comparator.comparing(EventJpaEntity::getCreatedAt))
                 .map(this::toResponse)
                 .toList();
