@@ -5,6 +5,8 @@ import com.splitbill.infrastructure.persistence.entity.DeviceTokenJpaEntity;
 import com.splitbill.infrastructure.persistence.entity.UserJpaEntity;
 import com.splitbill.infrastructure.persistence.repository.DeviceTokenJpaRepository;
 import com.splitbill.infrastructure.persistence.repository.UserJpaRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -15,6 +17,8 @@ import java.util.UUID;
 /** Aparelhos que recebem push. O app registra no login e remove no "Sair". */
 @Service
 public class DeviceTokenUseCase {
+
+    private static final Logger log = LoggerFactory.getLogger(DeviceTokenUseCase.class);
 
     private final DeviceTokenJpaRepository devices;
     private final UserJpaRepository users;
@@ -42,6 +46,7 @@ public class DeviceTokenUseCase {
         device.setPlatform(platform);
         device.setUpdatedAt(now);
         devices.save(device);
+        log.info("Push: aparelho {} registrado para o usuario {}.", platform, userId);
     }
 
     @Transactional

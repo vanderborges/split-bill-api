@@ -61,6 +61,7 @@ public class PushNotificationSender {
                 .map(DeviceTokenJpaEntity::getToken)
                 .toList();
         if (tokens.isEmpty()) {
+            log.info("Push: usuario {} sem aparelho registrado, nada enviado.", event.recipientId());
             return;
         }
         String body = event.message().length() > MAX_BODY
