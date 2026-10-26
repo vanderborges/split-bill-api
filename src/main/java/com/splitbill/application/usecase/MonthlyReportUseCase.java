@@ -129,39 +129,42 @@ public class MonthlyReportUseCase {
 
         UserJpaEntity receiver = event.getGroup().getReceiver();
         if (receiver != null) {
-            BigDecimal zero = BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
-            List<PaymentSuggestionResponse> suggestions = new ArrayList<>(activeBalances.stream()
-                    .filter(balance -> balance.balance().compareTo(zero) < 0
-                            && !balance.userId().equals(receiver.getId()))
-                    .map(balance -> new PaymentSuggestionResponse(
-                            balance.userId(),
-                            balance.nickname(),
-                            receiver.getId(),
-                            receiver.getNickname(),
-                            balance.balance().abs()))
-                    .toList());
-            // O proprio recebedor tambem pode estar devendo: nao paga pra si
-            // mesmo, paga pros credores. Sem isso a cobranca dele saia sem
-            // destinatario nem PIX ("Combine com o grupo...").
-            activeBalances.stream()
-                    .filter(balance -> balance.userId().equals(receiver.getId())
-                            && balance.balance().compareTo(zero) < 0)
-                    .findFirst()
-                    .ifPresent(receiverDebt -> {
-                        List<MonthlyBalanceResponse> receiverAndCreditors = new ArrayList<>();
-                        receiverAndCreditors.add(receiverDebt);
-                        activeBalances.stream()
-                                .filter(balance -> balance.balance().compareTo(zero) > 0)
-                                .forEach(receiverAndCreditors::add);
-                        suggestions.addAll(matchDebtorsToCreditors(receiverAndCreditors));
-                    });
-            return suggestions;
+            return routeThroughReceiver(activeBalances, receiver.getId(), receiver.getNickname());
         }
 
         return matchDebtorsToCreditors(activeBalances);
     }
 
-    private List<PaymentSuggestionResponse> matchDebtorsToCreditors(List<MonthlyBalanceResponse> balances) {
+    /**
+     * Recebedor eleito: todo devedor manda pra ele e ele repassa o credito
+     * inteiro de cada um dos outros credores. Antes so o primeiro passo
+     * existia, e com mais de uma pessoa positiva no grupo os outros
+     * credores ficavam sem sugestao nenhuma (o dinheiro parava no
+     * recebedor). Fecha a conta pra qualquer saldo do recebedor: ele
+     * recebe a soma das dividas e paga a soma dos creditos, e a diferenca
+     * e exatamente o saldo dele.
+     */
+    static List<PaymentSuggestionResponse> routeThroughReceiver(
+            List<MonthlyBalanceResponse> balances, UUID receiverId, String receiverNickname) {
+        BigDecimal zero = BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+        List<MonthlyBalanceResponse> others = balances.stream()
+                .filter(balance -> !balance.userId().equals(receiverId))
+                .toList();
+        List<PaymentSuggestionResponse> suggestions = new ArrayList<>();
+        others.stream()
+                .filter(balance -> balance.balance().compareTo(zero) < 0)
+                .forEach(debtor -> suggestions.add(new PaymentSuggestionResponse(
+                        debtor.userId(), debtor.nickname(), receiverId, receiverNickname,
+                        debtor.balance().abs())));
+        others.stream()
+                .filter(balance -> balance.balance().compareTo(zero) > 0)
+                .forEach(creditor -> suggestions.add(new PaymentSuggestionResponse(
+                        receiverId, receiverNickname, creditor.userId(), creditor.nickname(),
+                        creditor.balance())));
+        return suggestions;
+    }
+
+    private static List<PaymentSuggestionResponse> matchDebtorsToCreditors(List<MonthlyBalanceResponse> balances) {
         BigDecimal zero = BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
         Queue<CreditSlice> creditors = new ArrayDeque<>(balances.stream()
                 .filter(balance -> balance.balance().compareTo(zero) > 0)
