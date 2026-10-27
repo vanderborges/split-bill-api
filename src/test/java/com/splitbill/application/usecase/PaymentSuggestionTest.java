@@ -65,6 +65,6 @@ class PaymentSuggestionTest {
     }
 
     private static MonthlyBalanceResponse balance(UUID id, String nickname, String value) {
-        return new MonthlyBalanceResponse(id, nickname, BigDecimal.ZERO, BigDecimal.ZERO, new BigDecimal(value));
+        return new MonthlyBalanceResponse(id, nickname, BigDecimal.ZERO, BigDecimal.ZERO, new BigDecimal(value), null);
     }
 }

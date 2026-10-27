@@ -101,6 +101,11 @@ public class GroupController {
         return groups.assignTemporaryEvent(groupId, userId, request.eventId(), currentUser.id());
     }
 
+    @PutMapping("/{groupId}/members/{userId}/promote")
+    public GroupMemberResponse promoteTemporary(@PathVariable UUID groupId, @PathVariable UUID userId) {
+        return groups.promoteTemporary(groupId, userId, currentUser.id());
+    }
+
     @PostMapping("/{groupId}/members")
     @ResponseStatus(HttpStatus.CREATED)
     public GroupMemberResponse addMember(

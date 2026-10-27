@@ -93,7 +93,7 @@ public class PlaceholderUseCase {
         member.setUser(user);
         member.setRole(GroupMemberRole.MEMBER);
         member.setActive(true);
-        member.setTemporary(event != null);
+        member.setTemporary(event != null || Boolean.TRUE.equals(request.temporary()));
         member.setTemporaryEvent(event);
         member.setCreatedAt(now);
         member.setUpdatedAt(now);
@@ -152,8 +152,11 @@ public class PlaceholderUseCase {
         return members.findByGroupIdAndActiveTrue(invite.getGroup().getId()).stream()
                 .filter(member -> member.getUser().isPlaceholder())
                 .filter(member -> member.getUser().getDeletedAt() == null)
+                // Convite do grupo: fixos e temporarios do grupo ainda na
+                // lista (quem escolhe um temporario continua temporario).
                 .filter(member -> inviteEvent == null
                         ? !member.isTemporary()
+                        || (member.isGroupTemporary() && groupRules.isTemporaryListed(member))
                         : member.isTemporary()
                         && member.getTemporaryEvent() != null
                         && member.getTemporaryEvent().getId().equals(inviteEvent.getId()))

@@ -143,7 +143,7 @@ public class GroupInviteUseCase {
             if (!alreadyMember) {
                 // claim() limpa o EntityManager: so ids/nomes lidos antes.
                 notifyAdminsOfNewMember(group.getId(), groupName, requesterId, userName,
-                        temporaryEvent == null ? null : temporaryEvent.getName(),
+                        temporaryEvent != null ? temporaryEvent.getName() : claimed.temporary() ? "" : null,
                         placeholderName);
             }
             return claimed;
@@ -199,7 +199,10 @@ public class GroupInviteUseCase {
                 .append(newUserName)
                 .append(" entrou no grupo");
         if (temporaryEventName != null) {
-            message.append(" como temporário no evento ").append(temporaryEventName);
+            message.append(" como temporário");
+            if (!temporaryEventName.isEmpty()) {
+                message.append(" no evento ").append(temporaryEventName);
+            }
         }
         if (placeholderName != null && !placeholderName.equals(newUserName)) {
             message.append(" no lugar de \"").append(placeholderName).append("\" (sem cadastro)");

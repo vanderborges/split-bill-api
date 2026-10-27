@@ -302,7 +302,7 @@ public class NotificationUseCase {
 
         String text = event.getGroup().getName() + ": " + payer.getNickname()
                 + " informou o pagamento de " + formatCurrency(settlement.amount())
-                + " no evento " + event.getName() + ". Confirme no Relatório.";
+                + " no evento " + event.getName() + ". Confirme no evento.";
         members.findByGroupIdAndActiveTrue(event.getGroup().getId()).stream()
                 .filter(member -> member.getRole() == GroupMemberRole.ADMIN)
                 .map(GroupMemberJpaEntity::getUser)
@@ -392,7 +392,8 @@ public class NotificationUseCase {
                         : notification.getReadAt().toInstant(ZoneOffset.UTC),
                 notification.getPixKey(),
                 notification.getReceiverName(),
-                notification.getType()
+                notification.getType(),
+                event == null ? null : event.getGroup().getId()
         );
     }
 }

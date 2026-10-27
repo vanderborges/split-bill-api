@@ -174,8 +174,8 @@ public class GroupUseCase {
         final UUID filterEventId = scopeEventId;
         List<GroupMemberResponse> listed = new ArrayList<>(members.findByGroupIdAndActiveTrue(groupId).stream()
                 .filter(member -> filterEventId != null
-                        ? member.participatesIn(filterEventId)
-                        : !member.isTemporary() || isTemporaryEventOpen(member))
+                        ? member.participatesIn(filterEventId) && (!member.isGroupTemporary() || isTemporaryListed(member))
+                        : isTemporaryListed(member))
                 .map(this::toMemberResponse)
                 .toList());
         if (filterEventId != null) {
@@ -215,8 +215,45 @@ public class GroupUseCase {
         requireAdmin(groupId, requesterId);
         return members.findByGroupIdAndActiveTrue(groupId).stream()
                 .filter(GroupMemberJpaEntity::isTemporary)
+                // Temporario do grupo sai da lista quando todos os eventos
+                // com despesa dele fecham; o de evento antigo continua
+                // aparecendo (oculto) pra poder ir pra outro evento.
+                .filter(member -> !member.isGroupTemporary() || isTemporaryListed(member))
                 .map(this::toMemberResponse)
                 .toList();
+    }
+
+    /**
+     * Fixo: sempre. Temporario de um evento: enquanto o evento nao fecha.
+     * Temporario do grupo: enquanto nao tem despesa ou tem alguma em
+     * evento ainda nao fechado.
+     */
+    public boolean isTemporaryListed(GroupMemberJpaEntity member) {
+        if (!member.isTemporary()) {
+            return true;
+        }
+        if (!member.isGroupTemporary()) {
+            return isTemporaryEventOpen(member);
+        }
+        List<EventStatus> statuses = expenses.findInvolvedEventStatuses(
+                member.getGroup().getId(), member.getUser().getId());
+        return statuses.isEmpty() || statuses.stream().anyMatch(status -> status != EventStatus.CLOSED);
+    }
+
+    /** Admin: o temporario passa a ser integrante fixo do grupo. */
+    @Transactional
+    public GroupMemberResponse promoteTemporary(UUID groupId, UUID userId, UUID requesterId) {
+        requireAdmin(groupId, requesterId);
+        GroupMemberJpaEntity member = members.findByGroupIdAndUserId(groupId, userId)
+                .filter(GroupMemberJpaEntity::isActive)
+                .orElseThrow(() -> new DomainException("Integrante do grupo não encontrado."));
+        if (!member.isTemporary()) {
+            throw new DomainException("Essa pessoa já é integrante do grupo.");
+        }
+        member.setTemporary(false);
+        member.setTemporaryEvent(null);
+        member.setUpdatedAt(LocalDateTime.now());
+        return toMemberResponse(member);
     }
 
     /**

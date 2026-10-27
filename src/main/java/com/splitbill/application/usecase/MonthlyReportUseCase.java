@@ -257,8 +257,9 @@ public class MonthlyReportUseCase {
                 .orElseThrow(() -> new DomainException("Evento não encontrado."));
         Map<UUID, BalanceTotals> totalsByUser = new LinkedHashMap<>();
         groupMembers.findByGroupIdAndActiveTrue(event.getGroup().getId()).stream()
-                // Temporario de outro evento nao entra (nem com saldo zerado).
-                .filter(member -> member.participatesIn(eventId))
+                // Temporario de outro evento nao entra (nem com saldo zerado);
+                // temporario do grupo so entra pelas despesas dele (abaixo).
+                .filter(member -> member.participatesIn(eventId) && !member.isGroupTemporary())
                 .map(GroupMemberJpaEntity::getUser)
                 .filter(user -> user.getDeletedAt() == null)
                 .forEach(user -> totalsByUser.put(user.getId(), new BalanceTotals(user)));
@@ -420,7 +421,8 @@ public class MonthlyReportUseCase {
         private MonthlyBalanceResponse toResponse() {
             BigDecimal balance = paid.subtract(consumed).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
             String nickname = String.join(" + ", nicknamesByUser.values().stream().sorted().toList());
-            return new MonthlyBalanceResponse(user.getId(), nickname, consumed, paid, balance);
+            String pixKey = user.getPixKey() == null || user.getPixKey().isBlank() ? null : user.getPixKey();
+            return new MonthlyBalanceResponse(user.getId(), nickname, consumed, paid, balance, pixKey);
         }
 
         private BalanceResult toResult() {

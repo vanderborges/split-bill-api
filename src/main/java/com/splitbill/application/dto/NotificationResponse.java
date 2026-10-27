@@ -12,6 +12,8 @@ public record NotificationResponse(
         Instant readAt,
         String pixKey,
         String receiverName,
-        String type
+        String type,
+        // Grupo do evento: o app abre o evento certo ao tocar na notificação.
+        UUID groupId
 ) {
 }

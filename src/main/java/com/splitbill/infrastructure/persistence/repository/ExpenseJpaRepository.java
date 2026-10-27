@@ -81,4 +81,25 @@ public interface ExpenseJpaRepository extends JpaRepository<ExpenseJpaEntity, UU
             @Param("userId") UUID userId,
             @Param("excludedStatus") EventStatus excludedStatus
     );
+
+    /**
+     * Status dos eventos (nao apagados) do grupo em que a pessoa tem
+     * despesa - usado pra saber se um temporario do grupo ja "expirou"
+     * (todas as despesas dele em eventos fechados).
+     */
+    @Query("""
+            select distinct event.status
+            from ExpenseJpaEntity expense
+            join expense.event event
+            left join expense.payers payer
+            left join expense.participants participant
+            where expense.deletedAt is null
+              and event.deletedAt is null
+              and event.group.id = :groupId
+              and (expense.payer.id = :userId or payer.user.id = :userId or participant.user.id = :userId)
+            """)
+    List<EventStatus> findInvolvedEventStatuses(
+            @Param("groupId") UUID groupId,
+            @Param("userId") UUID userId
+    );
 }

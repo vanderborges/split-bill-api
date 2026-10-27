@@ -11,6 +11,8 @@ import java.util.UUID;
  */
 public record CreatePlaceholderRequest(
         @NotBlank @Size(max = 80) String nickname,
-        UUID eventId
+        UUID eventId,
+        // true sem eventId = temporario do grupo ("Convidar temporario").
+        Boolean temporary
 ) {
 }

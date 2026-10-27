@@ -127,6 +127,16 @@ public class GroupMemberJpaEntity {
      * evento ao qual esta amarrado.
      */
     public boolean participatesIn(UUID eventId) {
-        return !temporary || (temporaryEvent != null && temporaryEvent.getId().equals(eventId));
+        return !temporary || temporaryEvent == null || temporaryEvent.getId().equals(eventId);
+    }
+
+    /**
+     * Temporario do grupo ("Convidar temporario", desde 27/10/2026): sem
+     * evento amarrado, participa de qualquer evento, mas so aparece nas
+     * listas enquanto tiver despesa em evento nao fechado (ou nenhuma
+     * despesa ainda) - ver GroupUseCase#isTemporaryListed.
+     */
+    public boolean isGroupTemporary() {
+        return temporary && temporaryEvent == null;
     }
 }

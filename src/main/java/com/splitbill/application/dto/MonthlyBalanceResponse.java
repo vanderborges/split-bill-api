@@ -8,6 +8,8 @@ public record MonthlyBalanceResponse(
         String nickname,
         BigDecimal totalConsumed,
         BigDecimal totalPaid,
-        BigDecimal balance
+        BigDecimal balance,
+        // PIX de quem recebe, pro texto de compartilhar do app (null = sem chave).
+        String pixKey
 ) {
 }
