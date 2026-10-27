@@ -27,13 +27,13 @@ public class AuthUseCase {
     @Transactional(readOnly = true)
     public AuthResponse login(LoginRequest request) {
         UserJpaEntity user = users.findByEmailIgnoreCase(request.email())
-                .orElseThrow(() -> new DomainException("Invalid email or password"));
+                .orElseThrow(() -> new DomainException("E-mail ou senha inválidos."));
         // Pessoa sem cadastro (placeholder) nunca faz login.
         if (user.getDeletedAt() != null || !user.isActive() || user.isPlaceholder()) {
-            throw new DomainException("Invalid email or password");
+            throw new DomainException("E-mail ou senha inválidos.");
         }
         if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
-            throw new DomainException("Invalid email or password");
+            throw new DomainException("E-mail ou senha inválidos.");
         }
         return new AuthResponse(tokens.issue(user), toResponse(user));
     }

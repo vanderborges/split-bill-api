@@ -121,9 +121,9 @@ public class GroupInviteUseCase {
         GroupInviteJpaEntity invite = activeInvite(inviteId);
         GroupJpaEntity group = invite.getGroup();
         UserJpaEntity user = users.findById(requesterId)
-                .orElseThrow(() -> new DomainException("User not found"));
+                .orElseThrow(() -> new DomainException("Usuário não encontrado."));
         if (!user.isActive() || user.getDeletedAt() != null) {
-            throw new DomainException("User not found");
+            throw new DomainException("Usuário não encontrado.");
         }
 
         EventJpaEntity temporaryEvent = invite.getEvent();
@@ -232,7 +232,7 @@ public class GroupInviteUseCase {
 
     private GroupInviteJpaEntity createInvite(GroupJpaEntity group, UUID requesterId, EventJpaEntity event) {
         UserJpaEntity creator = users.findById(requesterId)
-                .orElseThrow(() -> new DomainException("User not found"));
+                .orElseThrow(() -> new DomainException("Usuário não encontrado."));
         GroupInviteJpaEntity invite = new GroupInviteJpaEntity();
         invite.setId(UUID.randomUUID());
         invite.setGroup(group);
@@ -245,18 +245,18 @@ public class GroupInviteUseCase {
 
     private GroupJpaEntity activeGroup(UUID groupId) {
         GroupJpaEntity group = groups.findById(groupId)
-                .orElseThrow(() -> new DomainException("Group not found"));
+                .orElseThrow(() -> new DomainException("Grupo não encontrado."));
         if (!group.isActive()) {
-            throw new DomainException("Group not found");
+            throw new DomainException("Grupo não encontrado.");
         }
         return group;
     }
 
     private GroupInviteJpaEntity activeInvite(UUID inviteId) {
         GroupInviteJpaEntity invite = invites.findById(inviteId)
-                .orElseThrow(() -> new DomainException("Invite not found or inactive"));
+                .orElseThrow(() -> new DomainException("Convite não encontrado ou inativo."));
         if (!invite.isActive() || !invite.getGroup().isActive()) {
-            throw new DomainException("Invite not found or inactive");
+            throw new DomainException("Convite não encontrado ou inativo.");
         }
         return invite;
     }

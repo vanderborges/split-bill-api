@@ -15,7 +15,7 @@ import java.util.List;
 @RestControllerAdvice
 public class ApiExceptionHandler {
 
-    private static final String GENERIC_VALIDATION_MESSAGE = "Preencha todos os campos obrigatorios.";
+    private static final String GENERIC_VALIDATION_MESSAGE = "Preencha todos os campos obrigatórios.";
 
     @ExceptionHandler(DomainException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
@@ -26,7 +26,7 @@ public class ApiExceptionHandler {
     /**
      * O app mostra o {@code message} direto pro usuario: antes saia
      * "Validation failed" em ingles. Quando a anotacao tem mensagem propria
-     * (ex.: {@code @NotBlank(message = "Informe o nome do evento")}), usa
+     * (ex.: {@code @NotBlank(message = "Informe o nome do evento.")}), usa
      * ela; senao, uma mensagem generica em portugues.
      */
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -55,7 +55,12 @@ public class ApiExceptionHandler {
     @ExceptionHandler(AccessDeniedException.class)
     @ResponseStatus(HttpStatus.FORBIDDEN)
     public ErrorResponse handleAccessDeniedException(AccessDeniedException exception) {
-        return new ErrorResponse(exception.getMessage(), List.of());
+        // O Spring Security manda "Access Denied" em ingles; o app mostra o
+        // message direto pro usuario.
+        String message = exception.getMessage() == null || "Access Denied".equals(exception.getMessage())
+                ? "Você não tem permissão para fazer isso."
+                : exception.getMessage();
+        return new ErrorResponse(message, List.of());
     }
 
     public record ErrorResponse(String message, List<String> details) {

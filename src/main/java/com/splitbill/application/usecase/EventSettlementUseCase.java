@@ -53,7 +53,7 @@ public class EventSettlementUseCase {
     @Transactional
     public List<EventSettlementResponse> listByEvent(UUID eventId, UUID requesterId) {
         EventJpaEntity event = events.findById(eventId)
-                .orElseThrow(() -> new DomainException("Event not found"));
+                .orElseThrow(() -> new DomainException("Evento não encontrado."));
         groupRules.requireEventAccess(event, requesterId);
         LocalDateTime now = LocalDateTime.now();
 
@@ -102,21 +102,21 @@ public class EventSettlementUseCase {
     @Transactional
     public EventSettlementResponse updateStatus(UUID settlementId, UpdateSettlementStatusRequest request, UUID requesterId) {
         EventSettlementJpaEntity settlement = settlements.findById(settlementId)
-                .orElseThrow(() -> new DomainException("Settlement not found"));
+                .orElseThrow(() -> new DomainException("Pagamento não encontrado."));
         groupRules.requireAdmin(settlement.getEvent().getGroup().getId(), requesterId);
         // Pagamento so se confirma com o evento aguardando pagamento: aberto
         // ainda pode receber despesa (o saldo muda) e fechado ja foi acertado.
         if (settlement.getEvent().getStatus() != EventStatus.SETTLING) {
-            throw new DomainException("So e possivel alterar pagamentos com o evento aguardando pagamento");
+            throw new DomainException("Só é possível alterar pagamentos com o evento aguardando pagamento.");
         }
         UserJpaEntity admin = users.findById(requesterId)
-                .orElseThrow(() -> new DomainException("Admin user not found"));
+                .orElseThrow(() -> new DomainException("Administrador não encontrado."));
 
         SettlementStatus status = normalizeStatus(request.status());
         // "Pagamento informado" so quem deve marca (botao Pagar); o admin
         // confirma (PAID) ou devolve pra pendente.
         if (status != SettlementStatus.PAID && status != SettlementStatus.PENDING) {
-            throw new DomainException("Status de pagamento invalido");
+            throw new DomainException("Status de pagamento inválido.");
         }
         LocalDateTime now = LocalDateTime.now();
         settlement.setStatus(status);
@@ -165,7 +165,7 @@ public class EventSettlementUseCase {
 
     private EventSettlementJpaEntity createSettlement(EventJpaEntity event, UUID userId, LocalDateTime now) {
         UserJpaEntity user = users.findById(userId)
-                .orElseThrow(() -> new DomainException("User not found"));
+                .orElseThrow(() -> new DomainException("Usuário não encontrado."));
         EventSettlementJpaEntity settlement = new EventSettlementJpaEntity();
         settlement.setId(UUID.randomUUID());
         settlement.setEvent(event);

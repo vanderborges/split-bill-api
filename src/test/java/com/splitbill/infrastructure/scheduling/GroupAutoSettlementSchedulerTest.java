@@ -58,7 +58,7 @@ class GroupAutoSettlementSchedulerTest {
         when(events.autoStartSettlementForGroup(group))
                 .thenReturn(List.of(eventWithNothingPending, eventWithPending));
         when(notifications.sendBillingAlertCore(eq(eventWithNothingPending), any()))
-                .thenThrow(new DomainException("Nao ha pagamentos pendentes para cobrar neste evento"));
+                .thenThrow(new DomainException("Não há pagamentos pendentes para cobrar neste evento."));
 
         scheduler.processGroup(group);
 

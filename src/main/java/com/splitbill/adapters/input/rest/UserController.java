@@ -46,7 +46,7 @@ public class UserController {
     @GetMapping
     public List<UserResponse> list() {
         if (!isAdmin()) {
-            throw new AccessDeniedException("Only admins can list users");
+            throw new AccessDeniedException("Apenas administradores podem listar usuários.");
         }
         return users.list();
     }

@@ -58,13 +58,13 @@ public class PlaceholderUseCase {
         groupRules.requireAdmin(groupId, requesterId);
         GroupJpaEntity group = groups.findById(groupId)
                 .filter(GroupJpaEntity::isActive)
-                .orElseThrow(() -> new DomainException("Group not found"));
+                .orElseThrow(() -> new DomainException("Grupo não encontrado."));
         EventJpaEntity event = request.eventId() == null
                 ? null
                 : groupRules.requireOpenEventOfGroup(groupId, request.eventId());
         String nickname = request.nickname().trim();
         if (nickname.isEmpty()) {
-            throw new DomainException("Informe o nome da pessoa");
+            throw new DomainException("Informe o nome da pessoa.");
         }
 
         LocalDateTime now = LocalDateTime.now();
@@ -117,7 +117,7 @@ public class PlaceholderUseCase {
         GroupMemberJpaEntity member = placeholderMember(groupId, userId);
         String trimmed = nickname.trim();
         if (trimmed.isEmpty()) {
-            throw new DomainException("Informe o nome da pessoa");
+            throw new DomainException("Informe o nome da pessoa.");
         }
         UserJpaEntity user = member.getUser();
         user.setNickname(trimmed);
@@ -132,7 +132,7 @@ public class PlaceholderUseCase {
         groupRules.requireAdmin(groupId, requesterId);
         GroupMemberJpaEntity member = placeholderMember(groupId, userId);
         if (hasExpenses(userId)) {
-            throw new DomainException("Essa pessoa ja tem despesas lancadas e nao pode ser removida");
+            throw new DomainException("Essa pessoa já tem despesas lançadas e não pode ser removida.");
         }
         LocalDateTime now = LocalDateTime.now();
         member.setActive(false);
@@ -173,17 +173,17 @@ public class PlaceholderUseCase {
     public GroupMemberJpaEntity claim(GroupInviteJpaEntity invite, UUID placeholderUserId, UserJpaEntity realUser) {
         UUID groupId = invite.getGroup().getId();
         UserJpaEntity placeholder = users.findById(placeholderUserId)
-                .orElseThrow(() -> new DomainException("Pessoa nao encontrada"));
+                .orElseThrow(() -> new DomainException("Pessoa não encontrada."));
         // Relê do banco ja travando a linha: quem chegar depois espera e ve
         // o fantasma ja apagado.
         entityManager.refresh(placeholder, LockModeType.PESSIMISTIC_WRITE);
         if (!placeholder.isPlaceholder() || placeholder.getDeletedAt() != null || !placeholder.isActive()) {
-            throw new DomainException("Esse nome ja foi escolhido por outra pessoa");
+            throw new DomainException("Esse nome já foi escolhido por outra pessoa.");
         }
         GroupMemberJpaEntity placeholderMember = claimableFor(invite).stream()
                 .filter(member -> member.getUser().getId().equals(placeholderUserId))
                 .findFirst()
-                .orElseThrow(() -> new DomainException("Esse nome nao faz parte deste convite"));
+                .orElseThrow(() -> new DomainException("Esse nome não faz parte deste convite."));
 
         LocalDateTime now = LocalDateTime.now();
         GroupMemberJpaEntity realMember = members.findByGroupIdAndUserId(groupId, realUser.getId()).orElse(null);
@@ -222,7 +222,7 @@ public class PlaceholderUseCase {
         UUID resultId = result.getId();
         entityManager.clear();
         return members.findById(resultId)
-                .orElseThrow(() -> new DomainException("Group member not found"));
+                .orElseThrow(() -> new DomainException("Integrante do grupo não encontrado."));
     }
 
     /**
@@ -311,6 +311,6 @@ public class PlaceholderUseCase {
         return members.findByGroupIdAndUserId(groupId, userId)
                 .filter(GroupMemberJpaEntity::isActive)
                 .filter(member -> member.getUser().isPlaceholder())
-                .orElseThrow(() -> new DomainException("Pessoa sem cadastro nao encontrada"));
+                .orElseThrow(() -> new DomainException("Pessoa sem cadastro não encontrada."));
     }
 }

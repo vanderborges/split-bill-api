@@ -32,7 +32,7 @@ public class ExpenseCategoryUseCase {
     public ExpenseCategoryResponse create(CreateExpenseCategoryRequest request) {
         String name = request.name().trim();
         if (categories.existsByNameIgnoreCase(name)) {
-            throw new DomainException("Expense category already exists");
+            throw new DomainException("Esse tipo de despesa já existe.");
         }
 
         ExpenseCategoryJpaEntity category = new ExpenseCategoryJpaEntity();

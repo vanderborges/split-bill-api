@@ -122,24 +122,24 @@ public class EventUseCase {
     public EventResponse create(CreateEventRequest request, UUID requesterId) {
         groupRules.requireAdmin(request.groupId(), requesterId);
         GroupJpaEntity group = groups.findById(request.groupId())
-                .orElseThrow(() -> new DomainException("Group not found"));
+                .orElseThrow(() -> new DomainException("Grupo não encontrado."));
         if (request.type() != EventType.MONTHLY && (request.name() == null || request.name().isBlank())) {
-            throw new DomainException("Informe o nome do evento");
+            throw new DomainException("Informe o nome do evento.");
         }
         MonthJpaEntity month = null;
         if (request.monthId() != null) {
             month = months.findById(request.monthId())
-                    .orElseThrow(() -> new DomainException("Month not found"));
+                    .orElseThrow(() -> new DomainException("Mês não encontrado."));
         } else if (request.type() == EventType.MONTHLY) {
             month = findOrCreateMonth(request.month(), request.year());
         }
         if (request.type() == EventType.MONTHLY && month == null) {
-            throw new DomainException("Monthly event must have monthId or month/year");
+            throw new DomainException("O evento mensal precisa ter mês e ano.");
         }
         if (request.type() == EventType.MONTHLY) {
             if (events.findByMonthIdAndTypeAndGroupId(month.getId(), EventType.MONTHLY, group.getId()).isPresent()) {
-                throw new DomainException("Ja existe um evento mensal "
-                        + String.format("%02d/%d", month.getMonth(), month.getYear()) + " neste grupo");
+                throw new DomainException("Já existe um evento mensal "
+                        + String.format("%02d/%d", month.getMonth(), month.getYear()) + " neste grupo.");
             }
             requireNextMonthWhileOneIsOpen(group, month);
         }
@@ -181,8 +181,8 @@ public class EventUseCase {
                 .orElseThrow()
                 .plusMonths(1);
         if (!YearMonth.of(month.getYear(), month.getMonth()).equals(expected)) {
-            throw new DomainException("Ja existe um mes aberto: o proximo evento mensal precisa ser "
-                    + formatReference(expected));
+            throw new DomainException("Já existe um mês aberto: o próximo evento mensal precisa ser "
+                    + formatReference(expected) + ".");
         }
     }
 
@@ -198,8 +198,8 @@ public class EventUseCase {
                 .map(EventUseCase::referenceOf)
                 .min(Comparator.naturalOrder())
                 .ifPresent(previous -> {
-                    throw new DomainException("O mes anterior (" + formatReference(previous)
-                            + ") ainda esta aberto. Feche ele antes de fechar este.");
+                    throw new DomainException("O mês anterior (" + formatReference(previous)
+                            + ") ainda está aberto. Feche-o antes de fechar este.");
                 });
     }
 
@@ -220,7 +220,7 @@ public class EventUseCase {
 
     private MonthJpaEntity findOrCreateMonth(Integer monthNumber, Integer yearNumber) {
         if (monthNumber == null || monthNumber < 1 || monthNumber > 12 || yearNumber == null || yearNumber < 2000) {
-            throw new DomainException("Monthly event must have valid month and year");
+            throw new DomainException("O evento mensal precisa ter mês e ano válidos.");
         }
         return months.findByMonthAndYear(monthNumber, yearNumber)
                 .orElseGet(() -> {
@@ -246,7 +246,7 @@ public class EventUseCase {
     @Transactional
     public EventResponse startSettlement(UUID id, StartSettlementRequest request, UUID requesterId) {
         EventJpaEntity event = events.findById(id)
-                .orElseThrow(() -> new DomainException("Event not found"));
+                .orElseThrow(() -> new DomainException("Evento não encontrado."));
         groupRules.requireAdmin(event.getGroup().getId(), requesterId);
         startSettlementCore(event, request);
         return toResponse(event);
@@ -254,7 +254,7 @@ public class EventUseCase {
 
     private void startSettlementCore(EventJpaEntity event, StartSettlementRequest request) {
         if (event.getStatus() != EventStatus.OPEN) {
-            throw new DomainException("Only an open event can start settlement");
+            throw new DomainException("Apenas um evento aberto pode ser fechado para pagamento.");
         }
         if (event.getType() == EventType.MONTHLY && event.getMonth() != null) {
             requirePreviousMonthsNotOpen(event);
@@ -273,15 +273,15 @@ public class EventUseCase {
 
         if (request != null && request.consolidateToEventId() != null) {
             EventJpaEntity target = events.findById(request.consolidateToEventId())
-                    .orElseThrow(() -> new DomainException("Target event not found"));
+                    .orElseThrow(() -> new DomainException("Evento de destino não encontrado."));
             if (target.getStatus() != EventStatus.OPEN) {
-                throw new DomainException("Cannot consolidate into an event that is not open");
+                throw new DomainException("Não é possível consolidar em um evento que não está aberto.");
             }
             if (target.getId().equals(event.getId())) {
-                throw new DomainException("Cannot consolidate event into itself");
+                throw new DomainException("Não é possível consolidar o evento nele mesmo.");
             }
             if (!target.getGroup().getId().equals(event.getGroup().getId())) {
-                throw new DomainException("Cannot consolidate into an event from another group");
+                throw new DomainException("Não é possível consolidar em um evento de outro grupo.");
             }
             consolidateInto(event, target);
         }
@@ -300,16 +300,16 @@ public class EventUseCase {
     private UserJpaEntity eventReceiver(EventJpaEntity event, UUID userId) {
         UserJpaEntity user = users.findById(userId)
                 .filter(candidate -> candidate.isActive() && candidate.getDeletedAt() == null)
-                .orElseThrow(() -> new DomainException("Pessoa nao encontrada"));
+                .orElseThrow(() -> new DomainException("Pessoa não encontrada."));
         if (user.isPlaceholder()) {
-            throw new DomainException("Pessoa sem cadastro nao pode receber os pagamentos");
+            throw new DomainException("Pessoa sem cadastro não pode receber os pagamentos.");
         }
         boolean participates = groupMembers.findByGroupIdAndUserId(event.getGroup().getId(), userId)
                 .filter(GroupMemberJpaEntity::isActive)
                 .map(member -> member.participatesIn(event.getId()))
                 .orElse(false);
         if (!participates) {
-            throw new DomainException("Quem recebe os pagamentos precisa participar deste evento");
+            throw new DomainException("Quem recebe os pagamentos precisa participar deste evento.");
         }
         return user;
     }
@@ -347,13 +347,13 @@ public class EventUseCase {
     @Transactional
     public EventResponse close(UUID id, UUID requesterId) {
         EventJpaEntity event = events.findById(id)
-                .orElseThrow(() -> new DomainException("Event not found"));
+                .orElseThrow(() -> new DomainException("Evento não encontrado."));
         groupRules.requireAdmin(event.getGroup().getId(), requesterId);
         if (event.getStatus() == EventStatus.CLOSED) {
-            throw new DomainException("Event is already closed");
+            throw new DomainException("O evento já está fechado.");
         }
         if (event.getStatus() != EventStatus.SETTLING) {
-            throw new DomainException("Abra o evento para pagamento antes de fechar");
+            throw new DomainException("Abra o evento para pagamento antes de fechar.");
         }
         boolean hasPendingPayment = settlements.listByEvent(id, requesterId).stream()
                 .anyMatch(settlement -> settlement.status() == SettlementStatus.PENDING
@@ -445,7 +445,7 @@ public class EventUseCase {
     @Transactional
     public EventResponse reopen(UUID id, UUID requesterId) {
         EventJpaEntity event = events.findById(id)
-                .orElseThrow(() -> new DomainException("Event not found"));
+                .orElseThrow(() -> new DomainException("Evento não encontrado."));
         groupRules.requireAdmin(event.getGroup().getId(), requesterId);
         event.setStatus(EventStatus.OPEN);
         event.setClosedAt(null);
@@ -459,7 +459,7 @@ public class EventUseCase {
     @Transactional
     public void delete(UUID id, UUID adminUserId) {
         EventJpaEntity event = events.findById(id)
-                .orElseThrow(() -> new DomainException("Event not found"));
+                .orElseThrow(() -> new DomainException("Evento não encontrado."));
         groupRules.requireAdmin(event.getGroup().getId(), adminUserId);
         LocalDateTime now = LocalDateTime.now();
         event.setDeletedAt(now);
@@ -503,13 +503,13 @@ public class EventUseCase {
                 .toList()) {
             BigDecimal remainingDebt = debtor.balance().abs().setScale(MONEY_SCALE, RoundingMode.HALF_UP);
             UserJpaEntity debtorUser = users.findById(debtor.userId())
-                    .orElseThrow(() -> new DomainException("Debtor user not found"));
+                    .orElseThrow(() -> new DomainException("Devedor não encontrado."));
 
             while (remainingDebt.compareTo(BigDecimal.ZERO) > 0 && !creditors.isEmpty()) {
                 BalanceAmount creditor = creditors.peek();
                 BigDecimal amount = remainingDebt.min(creditor.amount()).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
                 UserJpaEntity creditorUser = users.findById(creditor.userId())
-                        .orElseThrow(() -> new DomainException("Creditor user not found"));
+                        .orElseThrow(() -> new DomainException("Credor não encontrado."));
 
                 createConsolidationExpense(source, target, creditorUser, debtorUser, amount);
 

@@ -79,7 +79,7 @@ public class InstallmentRolloverService {
      */
     public ExpenseJpaEntity createNext(ExpenseJpaEntity template, EventJpaEntity targetEvent, int installmentNumber) {
         if (targetEvent.getStatus() == EventStatus.CLOSED) {
-            throw new DomainException("Cannot create next installment in a closed monthly event");
+            throw new DomainException("Não é possível criar a próxima parcela em um evento mensal fechado.");
         }
         InstallmentGroupJpaEntity installmentGroup = template.getInstallmentGroup();
         BigDecimal amount = installmentGroup.getTotalAmount();
@@ -127,7 +127,7 @@ public class InstallmentRolloverService {
             participant.setUser(template.getParticipants().stream()
                     .filter(item -> item.getUser().getId().equals(share.userId()))
                     .findFirst()
-                    .orElseThrow(() -> new DomainException("Installment participant not found"))
+                    .orElseThrow(() -> new DomainException("Participante da parcela não encontrado."))
                     .getUser());
             participant.setShareAmount(share.amount());
             participant.setShareCount(share.shareCount());

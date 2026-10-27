@@ -65,7 +65,7 @@ public class MonthUseCase {
     public MonthResponse create(CreateMonthRequest request, UUID requesterId) {
         groupRules.requireMembership(request.groupId(), requesterId);
         GroupJpaEntity group = groups.findById(request.groupId())
-                .orElseThrow(() -> new DomainException("Group not found"));
+                .orElseThrow(() -> new DomainException("Grupo não encontrado."));
 
         LocalDateTime now = LocalDateTime.now();
         MonthJpaEntity month = months.findByMonthAndYear(request.month(), request.year())
@@ -92,7 +92,7 @@ public class MonthUseCase {
     @Transactional
     public MonthResponse close(UUID id, UUID requesterId) {
         MonthJpaEntity month = months.findById(id)
-                .orElseThrow(() -> new DomainException("Month not found"));
+                .orElseThrow(() -> new DomainException("Mês não encontrado."));
         events.findFirstByMonthIdAndTypeOrderByCreatedAtAsc(month.getId(), EventType.MONTHLY)
                 .ifPresentOrElse(
                         event -> eventUseCase.close(event.getId(), requesterId),
@@ -107,7 +107,7 @@ public class MonthUseCase {
     @Transactional
     public MonthResponse reopen(UUID id, UUID requesterId) {
         MonthJpaEntity month = months.findById(id)
-                .orElseThrow(() -> new DomainException("Month not found"));
+                .orElseThrow(() -> new DomainException("Mês não encontrado."));
         month.setStatus(MonthStatus.OPEN);
         month.setClosedAt(null);
         events.findFirstByMonthIdAndTypeOrderByCreatedAtAsc(month.getId(), EventType.MONTHLY)

@@ -72,7 +72,7 @@ public class MonthlyReportUseCase {
     @Transactional
     public MonthlyReportResponse getByMonth(UUID monthId, UUID requesterId) {
         MonthJpaEntity month = months.findById(monthId)
-                .orElseThrow(() -> new DomainException("Month not found"));
+                .orElseThrow(() -> new DomainException("Mês não encontrado."));
         EventJpaEntity event = events.findFirstByMonthIdAndTypeOrderByCreatedAtAsc(monthId, EventType.MONTHLY)
                 .orElseGet(() -> createMonthlyEvent(month));
         groupRules.requireEventAccess(event, requesterId);
@@ -82,7 +82,7 @@ public class MonthlyReportUseCase {
     @Transactional(readOnly = true)
     public MonthlyReportResponse getByEvent(UUID eventId, UUID requesterId) {
         EventJpaEntity event = events.findById(eventId)
-                .orElseThrow(() -> new DomainException("Event not found"));
+                .orElseThrow(() -> new DomainException("Evento não encontrado."));
         groupRules.requireEventAccess(event, requesterId);
         MonthJpaEntity month = event.getMonth();
         return buildReport(event, month);
@@ -91,12 +91,12 @@ public class MonthlyReportUseCase {
     @Transactional(readOnly = true)
     public List<BalanceExpenseDetailResponse> getBalanceDetails(UUID eventId, UUID billingUserId, UUID requesterId) {
         EventJpaEntity event = events.findById(eventId)
-                .orElseThrow(() -> new DomainException("Event not found"));
+                .orElseThrow(() -> new DomainException("Evento não encontrado."));
         groupRules.requireEventAccess(event, requesterId);
         List<ExpenseJpaEntity> eventExpenses = expenses.findByEventIdAndDeletedAtIsNull(eventId);
         Set<UUID> groupedUserIds = billingGroupUserIds(event.getGroup().getId(), eventExpenses, billingUserId);
         if (groupedUserIds.isEmpty()) {
-            throw new DomainException("Pessoa nao encontrada neste evento");
+            throw new DomainException("Pessoa não encontrada neste evento.");
         }
 
         return eventExpenses.stream()
@@ -119,7 +119,7 @@ public class MonthlyReportUseCase {
     @Transactional(readOnly = true)
     public List<PaymentSuggestionResponse> getPaymentSuggestions(UUID eventId, UUID requesterId) {
         EventJpaEntity event = events.findById(eventId)
-                .orElseThrow(() -> new DomainException("Event not found"));
+                .orElseThrow(() -> new DomainException("Evento não encontrado."));
         groupRules.requireEventAccess(event, requesterId);
 
         List<MonthlyBalanceResponse> activeBalances = calculateTotals(eventId).values().stream()
@@ -254,7 +254,7 @@ public class MonthlyReportUseCase {
 
     private Map<UUID, BalanceTotals> calculateRawTotals(UUID eventId) {
         EventJpaEntity event = events.findById(eventId)
-                .orElseThrow(() -> new DomainException("Event not found"));
+                .orElseThrow(() -> new DomainException("Evento não encontrado."));
         Map<UUID, BalanceTotals> totalsByUser = new LinkedHashMap<>();
         groupMembers.findByGroupIdAndActiveTrue(event.getGroup().getId()).stream()
                 // Temporario de outro evento nao entra (nem com saldo zerado).
@@ -289,7 +289,7 @@ public class MonthlyReportUseCase {
         UserJpaEntity current = user;
         while (current.getBillingUser() != null) {
             if (!visited.add(current.getId())) {
-                throw new DomainException("Invalid billing user link");
+                throw new DomainException("Vínculo de cobrança inválido.");
             }
             current = current.getBillingUser();
         }
@@ -380,7 +380,7 @@ public class MonthlyReportUseCase {
 
     private GroupJpaEntity defaultGroup() {
         return groups.findFirstByActiveTrueOrderByCreatedAtAsc()
-                .orElseThrow(() -> new DomainException("Group not found"));
+                .orElseThrow(() -> new DomainException("Grupo não encontrado."));
     }
 
     public record BalanceResult(UUID userId, BigDecimal consumed, BigDecimal paid, BigDecimal balance) {

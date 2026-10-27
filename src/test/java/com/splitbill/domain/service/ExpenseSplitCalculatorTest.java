@@ -42,7 +42,7 @@ class ExpenseSplitCalculatorTest {
     void rejectsExpenseWithoutParticipants() {
         assertThatThrownBy(() -> calculator.splitEqually(new BigDecimal("10.00"), List.of()))
                 .isInstanceOf(DomainException.class)
-                .hasMessage("Expense must have at least one participant");
+                .hasMessage("A despesa precisa ter ao menos um participante.");
     }
 
     @Test
@@ -74,7 +74,7 @@ class ExpenseSplitCalculatorTest {
                 )
         ))
                 .isInstanceOf(DomainException.class)
-                .hasMessage("A soma dos valores dos participantes precisa bater com o valor da despesa");
+                .hasMessage("A soma dos valores dos participantes precisa bater com o valor da despesa.");
     }
 
     @Test
@@ -87,7 +87,7 @@ class ExpenseSplitCalculatorTest {
                 )
         ))
                 .isInstanceOf(DomainException.class)
-                .hasMessage("Informe o valor de todos os participantes");
+                .hasMessage("Informe o valor de todos os participantes.");
     }
 
     @Test

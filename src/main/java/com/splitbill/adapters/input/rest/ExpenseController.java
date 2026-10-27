@@ -42,7 +42,7 @@ public class ExpenseController {
             return expenses.listByEvent(eventId, currentUser.id());
         }
         if (monthId == null) {
-            throw new DomainException("monthId or eventId is required");
+            throw new DomainException("Informe o evento.");
         }
         return expenses.listByMonth(monthId);
     }

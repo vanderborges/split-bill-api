@@ -92,7 +92,7 @@ public class GroupUseCase {
     public GroupResponse update(UUID groupId, UpdateGroupRequest request, UUID requesterId) {
         requireAdmin(groupId, requesterId);
         GroupJpaEntity group = groups.findById(groupId)
-                .orElseThrow(() -> new DomainException("Group not found"));
+                .orElseThrow(() -> new DomainException("Grupo não encontrado."));
         group.setName(request.name());
         group.setDescription(request.description());
         group.setUpdatedAt(LocalDateTime.now());
@@ -110,7 +110,7 @@ public class GroupUseCase {
     public GroupResponse setReceiver(UUID groupId, UUID receiverUserId, UUID requesterId) {
         requireAdmin(groupId, requesterId);
         GroupJpaEntity group = groups.findById(groupId)
-                .orElseThrow(() -> new DomainException("Group not found"));
+                .orElseThrow(() -> new DomainException("Grupo não encontrado."));
         if (receiverUserId == null) {
             group.setReceiver(null);
             group.setUpdatedAt(LocalDateTime.now());
@@ -118,15 +118,15 @@ public class GroupUseCase {
         }
         GroupMemberJpaEntity receiverMember = members.findByGroupIdAndUserId(groupId, receiverUserId)
                 .filter(GroupMemberJpaEntity::isActive)
-                .orElseThrow(() -> new DomainException("Receiver must be an active member of the group"));
+                .orElseThrow(() -> new DomainException("Quem recebe precisa ser integrante ativo do grupo."));
         if (receiverMember.isTemporary()) {
-            throw new DomainException("Temporary members cannot be the group receiver");
+            throw new DomainException("Convidados temporários não podem ser o recebedor do grupo.");
         }
         UserJpaEntity receiver = users.findById(receiverUserId)
-                .orElseThrow(() -> new DomainException("User not found"));
+                .orElseThrow(() -> new DomainException("Usuário não encontrado."));
         if (receiver.isPlaceholder()) {
             // Sem cadastro = sem chave PIX pra receber.
-            throw new DomainException("Pessoa sem cadastro nao pode ser o recebedor do grupo");
+            throw new DomainException("Pessoa sem cadastro não pode ser o recebedor do grupo.");
         }
         group.setReceiver(receiver);
         group.setUpdatedAt(LocalDateTime.now());
@@ -144,10 +144,10 @@ public class GroupUseCase {
     public GroupResponse setAutoSettlementDay(UUID groupId, Integer day, UUID requesterId) {
         requireAdmin(groupId, requesterId);
         if (day != null && (day < 1 || day > 31)) {
-            throw new DomainException("Day must be between 1 and 31");
+            throw new DomainException("O dia precisa estar entre 1 e 31.");
         }
         GroupJpaEntity group = groups.findById(groupId)
-                .orElseThrow(() -> new DomainException("Group not found"));
+                .orElseThrow(() -> new DomainException("Grupo não encontrado."));
         group.setAutoSettlementDay(day);
         group.setUpdatedAt(LocalDateTime.now());
         return toResponse(group);
@@ -228,9 +228,9 @@ public class GroupUseCase {
         requireAdmin(groupId, requesterId);
         GroupMemberJpaEntity member = members.findByGroupIdAndUserId(groupId, userId)
                 .filter(GroupMemberJpaEntity::isActive)
-                .orElseThrow(() -> new DomainException("Group member not found"));
+                .orElseThrow(() -> new DomainException("Integrante do grupo não encontrado."));
         if (!member.isTemporary()) {
-            throw new DomainException("Only temporary members can be moved to another event");
+            throw new DomainException("Apenas convidados temporários podem ser incluídos em outro evento.");
         }
         member.setTemporaryEvent(requireOpenEventOfGroup(groupId, eventId));
         member.setUpdatedAt(LocalDateTime.now());
@@ -240,12 +240,12 @@ public class GroupUseCase {
     /** Evento do grupo, nao apagado e nao fechado - destino valido pra um temporario. */
     public EventJpaEntity requireOpenEventOfGroup(UUID groupId, UUID eventId) {
         EventJpaEntity event = events.findById(eventId)
-                .orElseThrow(() -> new DomainException("Event not found"));
+                .orElseThrow(() -> new DomainException("Evento não encontrado."));
         if (!event.getGroup().getId().equals(groupId) || event.getDeletedAt() != null) {
-            throw new DomainException("Event not found");
+            throw new DomainException("Evento não encontrado.");
         }
         if (event.getStatus() == EventStatus.CLOSED) {
-            throw new DomainException("Event is already closed");
+            throw new DomainException("O evento já está fechado.");
         }
         return event;
     }
@@ -260,9 +260,9 @@ public class GroupUseCase {
         }
         GroupMemberJpaEntity member = members.findByGroupIdAndUserId(event.getGroup().getId(), userId)
                 .filter(GroupMemberJpaEntity::isActive)
-                .orElseThrow(() -> new DomainException("User does not belong to this group"));
+                .orElseThrow(() -> new DomainException("O usuário não faz parte deste grupo."));
         if (!member.participatesIn(event.getId())) {
-            throw new DomainException("Temporary members can only access their own event");
+            throw new DomainException("Convidados temporários só acessam o próprio evento.");
         }
     }
 
@@ -275,16 +275,16 @@ public class GroupUseCase {
     public GroupMemberResponse addMember(UUID groupId, AddGroupMemberRequest request, UUID requesterId) {
         requireAdmin(groupId, requesterId);
         GroupJpaEntity group = groups.findById(groupId)
-                .orElseThrow(() -> new DomainException("Group not found"));
+                .orElseThrow(() -> new DomainException("Grupo não encontrado."));
         UserJpaEntity user = activeUser(request.userId());
         if (user.isPlaceholder() && request.role() == GroupMemberRole.ADMIN) {
-            throw new DomainException("Pessoa sem cadastro nao pode ser admin do grupo");
+            throw new DomainException("Pessoa sem cadastro não pode ser administradora do grupo.");
         }
 
         if (request.role() == GroupMemberRole.ADMIN
                 && members.countByGroupIdAndRoleAndActiveTrue(groupId, GroupMemberRole.ADMIN) >= MAX_ADMINS_PER_GROUP
                 && !members.existsByGroupIdAndUserIdAndRoleAndActiveTrue(groupId, request.userId(), GroupMemberRole.ADMIN)) {
-            throw new DomainException("O grupo pode ter no maximo " + MAX_ADMINS_PER_GROUP + " admins");
+            throw new DomainException("O grupo pode ter no máximo " + MAX_ADMINS_PER_GROUP + " administradores.");
         }
 
         GroupMemberJpaEntity member = members.findByGroupIdAndUserId(groupId, request.userId())
@@ -299,7 +299,7 @@ public class GroupUseCase {
         if (member.getRole() == GroupMemberRole.ADMIN
                 && request.role() != GroupMemberRole.ADMIN
                 && members.countByGroupIdAndRoleAndActiveTrue(groupId, GroupMemberRole.ADMIN) <= 1) {
-            throw new DomainException("Group must have at least one admin");
+            throw new DomainException("O grupo precisa ter ao menos um administrador.");
         }
         member.setRole(request.role());
         member.setActive(true);
@@ -311,7 +311,7 @@ public class GroupUseCase {
     public void delete(UUID groupId, UUID adminUserId) {
         requireAdmin(groupId, adminUserId);
         GroupJpaEntity group = groups.findById(groupId)
-                .orElseThrow(() -> new DomainException("Group not found"));
+                .orElseThrow(() -> new DomainException("Grupo não encontrado."));
         group.setActive(false);
         group.setUpdatedAt(LocalDateTime.now());
     }
@@ -327,7 +327,7 @@ public class GroupUseCase {
         requireMembership(groupId, userId);
         List<String> pendingEvents = eventsWithPendingBalance(groupId, userId);
         if (!pendingEvents.isEmpty()) {
-            throw new DomainException("Voce ainda tem valores em aberto "
+            throw new DomainException("Você ainda tem valores em aberto "
                     + (pendingEvents.size() == 1 ? "no evento " : "nos eventos ")
                     + String.join(", ", pendingEvents)
                     + ". Acerte esses pagamentos antes de sair do grupo.");
@@ -340,25 +340,25 @@ public class GroupUseCase {
             return;
         }
         if (!members.existsByGroupIdAndUserIdAndActiveTrue(groupId, userId)) {
-            throw new DomainException("User does not belong to this group");
+            throw new DomainException("O usuário não faz parte deste grupo.");
         }
     }
 
     public void requireAdmin(UUID groupId, UUID userId) {
         if (userId == null || !members.existsByGroupIdAndUserIdAndRoleAndActiveTrue(groupId, userId, GroupMemberRole.ADMIN)) {
-            throw new DomainException("Only group admins can perform this action");
+            throw new DomainException("Apenas administradores do grupo podem fazer isso.");
         }
     }
 
     private void deactivateMember(UUID groupId, UUID userId) {
         GroupMemberJpaEntity member = members.findByGroupIdAndUserId(groupId, userId)
-                .orElseThrow(() -> new DomainException("Group member not found"));
+                .orElseThrow(() -> new DomainException("Integrante do grupo não encontrado."));
         if (!member.isActive()) {
             return;
         }
         if (member.getRole() == GroupMemberRole.ADMIN
                 && members.countByGroupIdAndRoleAndActiveTrue(groupId, GroupMemberRole.ADMIN) <= 1) {
-            throw new DomainException("Group must have at least one admin");
+            throw new DomainException("O grupo precisa ter ao menos um administrador.");
         }
         member.setActive(false);
         member.setUpdatedAt(LocalDateTime.now());
@@ -391,9 +391,9 @@ public class GroupUseCase {
 
     private UserJpaEntity activeUser(UUID userId) {
         UserJpaEntity user = users.findById(userId)
-                .orElseThrow(() -> new DomainException("User not found"));
+                .orElseThrow(() -> new DomainException("Usuário não encontrado."));
         if (!user.isActive() || user.getDeletedAt() != null) {
-            throw new DomainException("User not found");
+            throw new DomainException("Usuário não encontrado.");
         }
         return user;
     }

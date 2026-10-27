@@ -53,12 +53,12 @@ public class UserUseCase {
     @Transactional(readOnly = true)
     public UserResponse get(UUID id, UUID requesterId, boolean requesterIsAdmin) {
         if (!requesterIsAdmin && !id.equals(requesterId)) {
-            throw new DomainException("Users can only view their own profile");
+            throw new DomainException("Você só pode ver o próprio perfil.");
         }
         UserJpaEntity user = users.findById(id)
-                .orElseThrow(() -> new DomainException("User not found"));
+                .orElseThrow(() -> new DomainException("Usuário não encontrado."));
         if (user.getDeletedAt() != null) {
-            throw new DomainException("User not found");
+            throw new DomainException("Usuário não encontrado.");
         }
         return toResponse(user);
     }
@@ -76,10 +76,10 @@ public class UserUseCase {
     @Transactional
     public UserResponse create(CreateUserRequest request, boolean allowAdminFlag, boolean allowBootstrapAdmin) {
         if (users.existsByEmailIgnoreCase(request.email())) {
-            throw new DomainException("Email already registered");
+            throw new DomainException("E-mail já cadastrado.");
         }
         if (users.countByDeletedAtIsNull() == 0 && !allowBootstrapAdmin) {
-            throw new DomainException("Bootstrap admin token is required to create the first user");
+            throw new DomainException("É necessário o token de administrador para criar o primeiro usuário.");
         }
 
         LocalDateTime now = LocalDateTime.now();
@@ -110,12 +110,12 @@ public class UserUseCase {
     @Transactional
     public UserResponse update(UUID id, UpdateUserRequest request, UUID requesterId, boolean requesterIsAdmin) {
         if (!requesterIsAdmin && !id.equals(requesterId)) {
-            throw new DomainException("Users can only update their own profile");
+            throw new DomainException("Você só pode alterar o próprio perfil.");
         }
         UserJpaEntity user = users.findById(id)
-                .orElseThrow(() -> new DomainException("User not found"));
+                .orElseThrow(() -> new DomainException("Usuário não encontrado."));
         if (user.getDeletedAt() != null) {
-            throw new DomainException("User not found");
+            throw new DomainException("Usuário não encontrado.");
         }
         users.findAll().stream()
                 .filter(existing -> existing.getDeletedAt() == null)
@@ -123,19 +123,19 @@ public class UserUseCase {
                 .filter(existing -> existing.getEmail().equalsIgnoreCase(request.email()))
                 .findAny()
                 .ifPresent(existing -> {
-                    throw new DomainException("Email already registered");
+                    throw new DomainException("E-mail já cadastrado.");
                 });
         UUID currentBillingUserId = user.getBillingUser() == null ? null : user.getBillingUser().getId();
         if (!requesterIsAdmin && (request.admin() != user.isAdmin()
                 || request.active() != user.isActive()
                 || !sameId(currentBillingUserId, request.billingUserId()))) {
-            throw new DomainException("Users cannot change their access settings");
+            throw new DomainException("Você não pode alterar as próprias permissões de acesso.");
         }
         if (user.isAdmin() && !request.admin() && users.countByAdminTrueAndActiveTrueAndDeletedAtIsNull() <= 1) {
-            throw new DomainException("Cannot remove admin role from the last active admin");
+            throw new DomainException("Não é possível remover o perfil de administrador do último administrador ativo.");
         }
         if (user.isAdmin() && !request.active() && users.countByAdminTrueAndActiveTrueAndDeletedAtIsNull() <= 1) {
-            throw new DomainException("Cannot deactivate the last active admin");
+            throw new DomainException("Não é possível desativar o último administrador ativo.");
         }
 
         user.setFullName(request.fullName());
@@ -153,18 +153,18 @@ public class UserUseCase {
     @Transactional
     public void delete(UUID id, boolean requesterIsAdmin) {
         if (!requesterIsAdmin) {
-            throw new DomainException("Only admins can delete users");
+            throw new DomainException("Apenas administradores podem excluir usuários.");
         }
         UserJpaEntity user = users.findById(id)
-                .orElseThrow(() -> new DomainException("User not found"));
+                .orElseThrow(() -> new DomainException("Usuário não encontrado."));
         if (user.getDeletedAt() != null) {
             return;
         }
         if (user.isAdmin() && users.countByAdminTrueAndActiveTrueAndDeletedAtIsNull() <= 1) {
-            throw new DomainException("Cannot delete the last active admin");
+            throw new DomainException("Não é possível excluir o último administrador ativo.");
         }
         if (expenses.existsByUserInvolvementAndEventStatusNot(id, EventStatus.CLOSED)) {
-            throw new DomainException("Nao e possivel excluir um usuario que participa de um evento em aberto");
+            throw new DomainException("Não é possível excluir um usuário que participa de um evento em aberto.");
         }
 
         LocalDateTime now = LocalDateTime.now();
@@ -181,9 +181,9 @@ public class UserUseCase {
     @Transactional
     public void changePassword(UUID userId, ChangePasswordRequest request) {
         UserJpaEntity user = users.findById(userId)
-                .orElseThrow(() -> new DomainException("User not found"));
+                .orElseThrow(() -> new DomainException("Usuário não encontrado."));
         if (!passwordEncoder.matches(request.currentPassword(), user.getPasswordHash())) {
-            throw new DomainException("Current password is invalid");
+            throw new DomainException("A senha atual está incorreta.");
         }
         user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
         user.setUpdatedAt(LocalDateTime.now());
@@ -192,12 +192,12 @@ public class UserUseCase {
     @Transactional
     public void resetPassword(UUID userId, ResetPasswordRequest request, boolean requesterIsAdmin) {
         if (!requesterIsAdmin) {
-            throw new DomainException("Only admins can reset passwords");
+            throw new DomainException("Apenas administradores podem reiniciar senhas.");
         }
         UserJpaEntity user = users.findById(userId)
-                .orElseThrow(() -> new DomainException("User not found"));
+                .orElseThrow(() -> new DomainException("Usuário não encontrado."));
         if (user.getDeletedAt() != null || user.isPlaceholder()) {
-            throw new DomainException("User not found");
+            throw new DomainException("Usuário não encontrado.");
         }
         user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
         user.setUpdatedAt(LocalDateTime.now());
@@ -222,15 +222,15 @@ public class UserUseCase {
             return null;
         }
         if (billingUserId.equals(userId)) {
-            throw new DomainException("Billing user cannot be the same user");
+            throw new DomainException("O usuário de cobrança não pode ser o próprio usuário.");
         }
         UserJpaEntity billingUser = users.findById(billingUserId)
-                .orElseThrow(() -> new DomainException("Billing user not found"));
+                .orElseThrow(() -> new DomainException("Usuário de cobrança não encontrado."));
         if (billingUser.getDeletedAt() != null || !billingUser.isActive() || billingUser.isPlaceholder()) {
-            throw new DomainException("Billing user must be active");
+            throw new DomainException("O usuário de cobrança precisa estar ativo.");
         }
         if (billingUser.getBillingUser() != null) {
-            throw new DomainException("Billing user cannot be linked to another user");
+            throw new DomainException("O usuário de cobrança não pode estar vinculado a outro usuário.");
         }
         return billingUser;
     }

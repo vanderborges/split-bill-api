@@ -40,22 +40,22 @@ public class AuthTokenService {
         String payload = payload(token);
         String[] parts = payload.split(":");
         if (parts.length != 2) {
-            throw new DomainException("Invalid token");
+            throw new DomainException("Sessão inválida. Entre novamente.");
         }
         long expiresAt;
         try {
             expiresAt = Long.parseLong(parts[1]);
         } catch (NumberFormatException exception) {
-            throw new DomainException("Invalid token");
+            throw new DomainException("Sessão inválida. Entre novamente.");
         }
         if (expiresAt < Instant.now().getEpochSecond()) {
-            throw new DomainException("Expired token");
+            throw new DomainException("Sessão expirada. Entre novamente.");
         }
         UUID userId = UUID.fromString(parts[0]);
         UserJpaEntity user = users.findById(userId)
-                .orElseThrow(() -> new DomainException("Invalid token"));
+                .orElseThrow(() -> new DomainException("Sessão inválida. Entre novamente."));
         if (user.getDeletedAt() != null || !user.isActive()) {
-            throw new DomainException("Invalid token");
+            throw new DomainException("Sessão inválida. Entre novamente.");
         }
         return user;
     }
@@ -63,12 +63,12 @@ public class AuthTokenService {
     private String payload(String token) {
         String[] tokenParts = token == null ? new String[0] : token.split("\\.");
         if (tokenParts.length != 2) {
-            throw new DomainException("Invalid token");
+            throw new DomainException("Sessão inválida. Entre novamente.");
         }
         String payload = new String(Base64.getUrlDecoder().decode(tokenParts[0]), StandardCharsets.UTF_8);
         String expectedSignature = sign(payload);
         if (!constantTimeEquals(expectedSignature, tokenParts[1])) {
-            throw new DomainException("Invalid token");
+            throw new DomainException("Sessão inválida. Entre novamente.");
         }
         return payload;
     }

@@ -64,14 +64,14 @@ public class UserExpenseSummaryUseCase {
             UUID requesterId
     ) {
         if (!groupMembers.existsByGroupIdAndUserIdAndActiveTrue(groupId, requesterId)) {
-            throw new DomainException("User does not belong to this group");
+            throw new DomainException("O usuário não faz parte deste grupo.");
         }
         // Temporario: o extrato fica restrito ao proprio evento.
         GroupMemberJpaEntity requesterMember = groupMembers.findByGroupIdAndUserId(groupId, requesterId).orElse(null);
         if (requesterMember != null && requesterMember.isTemporary() && requesterMember.getTemporaryEvent() != null) {
             UUID ownEventId = requesterMember.getTemporaryEvent().getId();
             if (eventId != null && !eventId.equals(ownEventId)) {
-                throw new DomainException("Temporary members can only access their own event");
+                throw new DomainException("Convidados temporários só acessam o próprio evento.");
             }
             eventId = ownEventId;
         }
@@ -82,18 +82,18 @@ public class UserExpenseSummaryUseCase {
             targetUserId = requesterId;
         }
         if (targetUserId != null && !targetUserId.equals(requesterId) && !requesterIsAdmin) {
-            throw new DomainException("Members can only view their own expense summary");
+            throw new DomainException("Integrantes só podem ver o próprio extrato.");
         }
         if (targetUserId != null && groupMembers.findByGroupIdAndUserId(groupId, targetUserId).isEmpty()) {
-            throw new DomainException("User does not belong to this group");
+            throw new DomainException("O usuário não faz parte deste grupo.");
         }
         final UUID selectedUserId = targetUserId;
         UserJpaEntity user = selectedUserId == null ? null : users.findById(selectedUserId)
-                .orElseThrow(() -> new DomainException("User not found"));
+                .orElseThrow(() -> new DomainException("Usuário não encontrado."));
         LocalDate start = from == null ? LocalDate.of(2000, 1, 1) : from;
         LocalDate end = to == null ? LocalDate.of(2999, 12, 31) : to;
         if (start.isAfter(end)) {
-            throw new DomainException("from must be before or equal to to");
+            throw new DomainException("A data inicial precisa ser anterior ou igual à data final.");
         }
 
         String normalizedCategory = normalizeFilter(category);

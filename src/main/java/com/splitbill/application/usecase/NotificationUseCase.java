@@ -85,9 +85,9 @@ public class NotificationUseCase {
     @Transactional
     public void markAsRead(UUID id, UUID userId) {
         NotificationJpaEntity notification = notifications.findById(id)
-                .orElseThrow(() -> new DomainException("Notification not found"));
+                .orElseThrow(() -> new DomainException("Notificação não encontrada."));
         if (!notification.getRecipient().getId().equals(userId)) {
-            throw new DomainException("Notification not found");
+            throw new DomainException("Notificação não encontrada.");
         }
         if (notification.getReadAt() == null) {
             notification.setReadAt(LocalDateTime.now(ZoneOffset.UTC));
@@ -97,9 +97,9 @@ public class NotificationUseCase {
     @Transactional
     public void delete(UUID id, UUID userId) {
         NotificationJpaEntity notification = notifications.findById(id)
-                .orElseThrow(() -> new DomainException("Notification not found"));
+                .orElseThrow(() -> new DomainException("Notificação não encontrada."));
         if (!notification.getRecipient().getId().equals(userId)) {
-            throw new DomainException("Notification not found");
+            throw new DomainException("Notificação não encontrada.");
         }
         notifications.delete(notification);
     }
@@ -121,10 +121,10 @@ public class NotificationUseCase {
     @Transactional
     public int sendBillingAlert(UUID eventId, UUID requesterId) {
         EventJpaEntity event = events.findById(eventId)
-                .orElseThrow(() -> new DomainException("Event not found"));
+                .orElseThrow(() -> new DomainException("Evento não encontrado."));
         groupRules.requireAdmin(event.getGroup().getId(), requesterId);
         UserJpaEntity admin = users.findById(requesterId)
-                .orElseThrow(() -> new DomainException("User not found"));
+                .orElseThrow(() -> new DomainException("Usuário não encontrado."));
         return sendBillingAlertCore(event, admin);
     }
 
@@ -145,7 +145,7 @@ public class NotificationUseCase {
                         && settlement.status() == SettlementStatus.PENDING)
                 .toList();
         if (pending.isEmpty()) {
-            throw new DomainException("Nao ha pagamentos pendentes para cobrar neste evento");
+            throw new DomainException("Não há pagamentos pendentes para cobrar neste evento.");
         }
 
         List<PaymentSuggestionResponse> suggestions = reports.getPaymentSuggestions(eventId, actingAs.getId());
@@ -156,7 +156,7 @@ public class NotificationUseCase {
         int sent = 0;
         for (EventSettlementResponse settlement : pending) {
             UserJpaEntity recipient = users.findById(settlement.userId())
-                    .orElseThrow(() -> new DomainException("User not found"));
+                    .orElseThrow(() -> new DomainException("Usuário não encontrado."));
             if (recipient.isPlaceholder()) {
                 // Pessoa sem cadastro nao abre o app: nao ha pra quem mandar.
                 continue;
@@ -187,7 +187,13 @@ public class NotificationUseCase {
      * mais de um destinatário (sem recebedor eleito, casando com vários
      * credores), não há um único PIX pra copiar, então ficam nulos.
      */
-    private record BillingMessage(String text, String pixKey, String receiverName) {
+    private record BillingMessage(
+            String text,
+            String pixKey,
+            String receiverName,
+            String headline,
+            List<MyPaymentResponse.Payee> payees
+    ) {
     }
 
     private BillingMessage buildBillingMessage(
@@ -201,23 +207,22 @@ public class NotificationUseCase {
 
         // Comeca pelo nome do grupo: quem esta em mais de um grupo nao sabia
         // de qual era a cobranca so pelo nome do evento (ex.: "10/2026").
-        StringBuilder message = new StringBuilder(event.getGroup().getName())
-                .append(": no evento ")
-                .append(event.getName())
-                .append(" você tem ")
-                .append(formatCurrency(settlement.amount()))
-                .append(" pendente. ");
+        String headline = event.getGroup().getName()
+                + ": no evento " + event.getName()
+                + ", você tem " + formatCurrency(settlement.amount()) + " pendente.";
+        StringBuilder message = new StringBuilder(headline).append(' ');
 
         if (targets.isEmpty()) {
-            message.append("Combine com o grupo pra quem enviar o pagamento.");
-            return new BillingMessage(message.toString(), null, null);
+            message.append("Combine com o grupo para quem enviar o pagamento.");
+            return new BillingMessage(message.toString(), null, null, headline, List.of());
         }
 
         List<String> parts = new ArrayList<>();
         List<UserJpaEntity> receivers = new ArrayList<>();
+        List<MyPaymentResponse.Payee> payees = new ArrayList<>();
         for (PaymentSuggestionResponse target : targets) {
             UserJpaEntity receiver = users.findById(target.toUserId())
-                    .orElseThrow(() -> new DomainException("User not found"));
+                    .orElseThrow(() -> new DomainException("Usuário não encontrado."));
             receivers.add(receiver);
             String pixKey = receiver.getPixKey();
             String part = "envie " + formatCurrency(target.amount()) + " para " + receiver.getFullName();
@@ -225,8 +230,13 @@ public class NotificationUseCase {
                 part += " (PIX: " + pixKey + ")";
             }
             parts.add(part);
+            payees.add(new MyPaymentResponse.Payee(
+                    receiver.getFullName(),
+                    target.amount(),
+                    pixKey == null || pixKey.isBlank() ? null : pixKey));
         }
-        message.append(String.join("; ", parts)).append(".");
+        String joined = String.join("; ", parts);
+        message.append(Character.toUpperCase(joined.charAt(0))).append(joined.substring(1)).append(".");
 
         if (receivers.size() == 1) {
             UserJpaEntity receiver = receivers.get(0);
@@ -234,10 +244,12 @@ public class NotificationUseCase {
             return new BillingMessage(
                     message.toString(),
                     pixKey == null || pixKey.isBlank() ? null : pixKey,
-                    receiver.getFullName()
+                    receiver.getFullName(),
+                    headline,
+                    payees
             );
         }
-        return new BillingMessage(message.toString(), null, null);
+        return new BillingMessage(message.toString(), null, null, headline, payees);
     }
 
     /**
@@ -248,7 +260,7 @@ public class NotificationUseCase {
     @Transactional
     public MyPaymentResponse myPayment(UUID eventId, UUID requesterId) {
         EventJpaEntity event = events.findById(eventId)
-                .orElseThrow(() -> new DomainException("Event not found"));
+                .orElseThrow(() -> new DomainException("Evento não encontrado."));
         EventSettlementResponse settlement = payerSettlement(event, requesterId);
         List<PaymentSuggestionResponse> suggestions = reports.getPaymentSuggestions(eventId, requesterId);
         BillingMessage billingMessage = buildBillingMessage(event, settlement, suggestions);
@@ -258,7 +270,9 @@ public class NotificationUseCase {
                 settlement.amount(),
                 billingMessage.text(),
                 billingMessage.pixKey(),
-                billingMessage.receiverName()
+                billingMessage.receiverName(),
+                billingMessage.headline(),
+                billingMessage.payees()
         );
     }
 
@@ -270,13 +284,13 @@ public class NotificationUseCase {
     @Transactional
     public MyPaymentResponse informPayment(UUID eventId, UUID requesterId) {
         EventJpaEntity event = events.findById(eventId)
-                .orElseThrow(() -> new DomainException("Event not found"));
+                .orElseThrow(() -> new DomainException("Evento não encontrado."));
         EventSettlementResponse settlement = payerSettlement(event, requesterId);
         if (settlement.status() != SettlementStatus.PENDING) {
-            throw new DomainException("Esse pagamento ja foi informado");
+            throw new DomainException("Esse pagamento já foi informado.");
         }
         UserJpaEntity payer = users.findById(requesterId)
-                .orElseThrow(() -> new DomainException("User not found"));
+                .orElseThrow(() -> new DomainException("Usuário não encontrado."));
         LocalDateTime now = LocalDateTime.now();
         UUID rootId = settlement.userId();
         settlementRows.findByEventId(eventId).stream()
@@ -306,7 +320,7 @@ public class NotificationUseCase {
     public EventSettlementResponse reviewSettlement(
             UUID settlementId, UpdateSettlementStatusRequest request, UUID adminId) {
         EventSettlementJpaEntity row = settlementRows.findById(settlementId)
-                .orElseThrow(() -> new DomainException("Settlement not found"));
+                .orElseThrow(() -> new DomainException("Pagamento não encontrado."));
         SettlementStatus previous = row.getStatus();
         EventSettlementResponse response = settlements.updateStatus(settlementId, request, adminId);
         if (previous == SettlementStatus.INFORMED && !row.getUser().isPlaceholder()) {
@@ -318,7 +332,7 @@ public class NotificationUseCase {
                     : "seu pagamento de " + formatCurrency(response.amount()) + " no evento "
                             + event.getName() + " não foi confirmado e voltou para pendente.");
             UserJpaEntity admin = users.findById(adminId)
-                    .orElseThrow(() -> new DomainException("User not found"));
+                    .orElseThrow(() -> new DomainException("Usuário não encontrado."));
             notify(row.getUser(), event, text, NotificationJpaEntity.TYPE_PAYMENT_REVIEWED, admin);
         }
         return response;
@@ -326,16 +340,16 @@ public class NotificationUseCase {
 
     private EventSettlementResponse payerSettlement(EventJpaEntity event, UUID requesterId) {
         if (event.getStatus() != EventStatus.SETTLING) {
-            throw new DomainException("O pagamento so pode ser feito com o evento aguardando pagamento");
+            throw new DomainException("O pagamento só pode ser feito com o evento aguardando pagamento.");
         }
         UserJpaEntity requester = users.findById(requesterId)
-                .orElseThrow(() -> new DomainException("User not found"));
+                .orElseThrow(() -> new DomainException("Usuário não encontrado."));
         UUID rootId = reports.billingRootId(requester);
         return settlements.listByEvent(event.getId(), requesterId).stream()
                 .filter(settlement -> settlement.userId().equals(rootId))
                 .filter(settlement -> settlement.role() == SettlementRole.DEBTOR)
                 .findFirst()
-                .orElseThrow(() -> new DomainException("Voce nao tem pagamento a fazer neste evento"));
+                .orElseThrow(() -> new DomainException("Você não tem pagamento a fazer neste evento."));
     }
 
     private void notify(UserJpaEntity recipient, EventJpaEntity event, String text, String type, UserJpaEntity author) {

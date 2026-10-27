@@ -91,7 +91,7 @@ public class ExpenseUseCase {
     @Transactional(readOnly = true)
     public List<ExpenseResponse> listByEvent(UUID eventId, UUID requesterId) {
         EventJpaEntity event = events.findById(eventId)
-                .orElseThrow(() -> new DomainException("Event not found"));
+                .orElseThrow(() -> new DomainException("Evento não encontrado."));
         requireEventAccess(event, requesterId);
         return expenses.findByEventIdAndDeletedAtIsNull(eventId).stream()
                 .map(this::toResponse)
@@ -118,7 +118,7 @@ public class ExpenseUseCase {
 
         LocalDateTime now = LocalDateTime.now();
         UserJpaEntity creator = users.findById(requesterId)
-                .orElseThrow(() -> new DomainException("User not found"));
+                .orElseThrow(() -> new DomainException("Usuário não encontrado."));
         ExpenseJpaEntity expense = new ExpenseJpaEntity();
         expense.setId(UUID.randomUUID());
         expense.setMonth(month);
@@ -135,13 +135,13 @@ public class ExpenseUseCase {
     public ExpenseResponse update(UUID id, CreateExpenseRequest request, UUID requesterId) {
         validateInstallments(request);
         ExpenseJpaEntity expense = expenses.findById(id)
-                .orElseThrow(() -> new DomainException("Expense not found"));
+                .orElseThrow(() -> new DomainException("Despesa não encontrada."));
         if (expense.getDeletedAt() != null) {
-            throw new DomainException("Expense not found");
+            throw new DomainException("Despesa não encontrada.");
         }
         requireEventAccess(expense.getEvent(), requesterId);
         if (expense.getEvent().getStatus() != EventStatus.OPEN) {
-            throw new DomainException("Cannot edit expense from an event that is not open");
+            throw new DomainException("Não é possível editar despesa de um evento que não está aberto.");
         }
         requireExpenseChangePermission(expense, requesterId);
         EventJpaEntity event = resolveEvent(request);
@@ -164,12 +164,12 @@ public class ExpenseUseCase {
     @Transactional
     public void delete(UUID id, UUID requesterId) {
         ExpenseJpaEntity expense = expenses.findById(id)
-                .orElseThrow(() -> new DomainException("Expense not found"));
+                .orElseThrow(() -> new DomainException("Despesa não encontrada."));
         if (expense.getDeletedAt() != null) {
-            throw new DomainException("Expense not found");
+            throw new DomainException("Despesa não encontrada.");
         }
         if (expense.getEvent().getStatus() != EventStatus.OPEN) {
-            throw new DomainException("Cannot delete expense from an event that is not open");
+            throw new DomainException("Não é possível excluir despesa de um evento que não está aberto.");
         }
         requireExpenseChangePermission(expense, requesterId);
         expense.setDeletedAt(LocalDateTime.now());
@@ -187,14 +187,14 @@ public class ExpenseUseCase {
     @Transactional
     public ExpenseResponse cancelSubscription(UUID id, UUID requesterId) {
         ExpenseJpaEntity expense = expenses.findById(id)
-                .orElseThrow(() -> new DomainException("Expense not found"));
+                .orElseThrow(() -> new DomainException("Despesa não encontrada."));
         if (expense.getDeletedAt() != null) {
-            throw new DomainException("Expense not found");
+            throw new DomainException("Despesa não encontrada.");
         }
         requireExpenseChangePermission(expense, requesterId);
         InstallmentGroupJpaEntity group = expense.getInstallmentGroup();
         if (group == null || !group.isSubscription()) {
-            throw new DomainException("Esta despesa nao e uma assinatura");
+            throw new DomainException("Esta despesa não é uma assinatura.");
         }
         if (group.getCancelledAt() == null) {
             group.setCancelledAt(LocalDateTime.now());
@@ -212,16 +212,16 @@ public class ExpenseUseCase {
             UUID requesterId
     ) {
         if (firstMonth == null) {
-            throw new DomainException("Installments must start from a monthly event or month");
+            throw new DomainException("O parcelamento precisa começar em um evento mensal.");
         }
         List<ExpensePayerRequest> payerRequests = normalizePayers(request);
         if (payerRequests.size() != 1) {
-            throw new DomainException("Installments currently support a single payer");
+            throw new DomainException("O parcelamento permite apenas um pagador.");
         }
         UserJpaEntity payer = users.findById(payerRequests.get(0).userId())
-                .orElseThrow(() -> new DomainException("Payer not found"));
+                .orElseThrow(() -> new DomainException("Pagador não encontrado."));
         UserJpaEntity creator = users.findById(requesterId)
-                .orElseThrow(() -> new DomainException("User not found"));
+                .orElseThrow(() -> new DomainException("Usuário não encontrado."));
 
         LocalDateTime now = LocalDateTime.now();
         InstallmentGroupJpaEntity group = new InstallmentGroupJpaEntity();
@@ -265,16 +265,16 @@ public class ExpenseUseCase {
             UUID requesterId
     ) {
         if (firstMonth == null) {
-            throw new DomainException("Assinatura deve comecar a partir de um evento mensal");
+            throw new DomainException("A assinatura deve começar a partir de um evento mensal.");
         }
         List<ExpensePayerRequest> payerRequests = normalizePayers(request);
         if (payerRequests.size() != 1) {
-            throw new DomainException("Assinatura atualmente so permite um pagador");
+            throw new DomainException("A assinatura permite apenas um pagador.");
         }
         UserJpaEntity payer = users.findById(payerRequests.get(0).userId())
-                .orElseThrow(() -> new DomainException("Payer not found"));
+                .orElseThrow(() -> new DomainException("Pagador não encontrado."));
         UserJpaEntity creator = users.findById(requesterId)
-                .orElseThrow(() -> new DomainException("User not found"));
+                .orElseThrow(() -> new DomainException("Usuário não encontrado."));
 
         LocalDateTime now = LocalDateTime.now();
         InstallmentGroupJpaEntity group = new InstallmentGroupJpaEntity();
@@ -308,17 +308,17 @@ public class ExpenseUseCase {
 
     private void validateMonthlyInstallmentEvent(EventJpaEntity event) {
         if (event.getType() != EventType.MONTHLY || event.getMonth() == null) {
-            throw new DomainException("Parcelamento e permitido apenas para eventos mensais");
+            throw new DomainException("Parcelamento é permitido apenas para eventos mensais.");
         }
     }
 
     private void validateInstallments(CreateExpenseRequest request) {
         if (request.installments() != null && request.installments() < 1) {
-            throw new DomainException("Installments must be greater than zero");
+            throw new DomainException("O número de parcelas precisa ser maior que zero.");
         }
         if (Boolean.TRUE.equals(request.subscription())
                 && request.installments() != null && request.installments() > 1) {
-            throw new DomainException("Uma despesa nao pode ser assinatura e parcelada ao mesmo tempo");
+            throw new DomainException("Uma despesa não pode ser assinatura e parcelada ao mesmo tempo.");
         }
     }
 
@@ -341,7 +341,7 @@ public class ExpenseUseCase {
         Map<UUID, UserJpaEntity> participantsById = users.findAllById(participantIds).stream()
                 .collect(Collectors.toMap(UserJpaEntity::getId, Function.identity()));
         if (participantsById.size() != participantIds.stream().distinct().count()) {
-            throw new DomainException("One or more participants were not found");
+            throw new DomainException("Um ou mais participantes não foram encontrados.");
         }
 
         Map<UUID, UserJpaEntity> payersById = users.findAllById(payerRequests.stream()
@@ -350,7 +350,7 @@ public class ExpenseUseCase {
                 .stream()
                 .collect(Collectors.toMap(UserJpaEntity::getId, Function.identity()));
         if (payersById.size() != payerRequests.stream().map(ExpensePayerRequest::userId).distinct().count()) {
-            throw new DomainException("One or more payers were not found");
+            throw new DomainException("Um ou mais pagadores não foram encontrados.");
         }
         // Quem ja estava nesta despesa pode continuar nela mesmo removido do
         // grupo: a pessoa so some de vez quando o evento acaba.
@@ -406,7 +406,7 @@ public class ExpenseUseCase {
                     .map(member -> member.participatesIn(event.getId()))
                     .orElse(false);
             if (!participates) {
-                throw new DomainException("Todas as pessoas da despesa precisam participar deste evento");
+                throw new DomainException("Todas as pessoas da despesa precisam participar deste evento.");
             }
         }
     }
@@ -415,9 +415,9 @@ public class ExpenseUseCase {
     private void requireEventAccess(EventJpaEntity event, UUID userId) {
         GroupMemberJpaEntity member = groupMembers.findByGroupIdAndUserId(event.getGroup().getId(), userId)
                 .filter(GroupMemberJpaEntity::isActive)
-                .orElseThrow(() -> new DomainException("User does not belong to this group"));
+                .orElseThrow(() -> new DomainException("O usuário não faz parte deste grupo."));
         if (!member.participatesIn(event.getId())) {
-            throw new DomainException("Temporary members can only access their own event");
+            throw new DomainException("Convidados temporários só acessam o próprio evento.");
         }
     }
 
@@ -432,33 +432,33 @@ public class ExpenseUseCase {
         )) {
             return;
         }
-        throw new DomainException("Only the creator or group admins can change this expense");
+        throw new DomainException("Apenas quem criou a despesa ou os administradores do grupo podem alterá-la.");
     }
 
     private EventJpaEntity resolveEvent(CreateExpenseRequest request) {
         if (request.eventId() != null) {
             return events.findById(request.eventId())
-                    .orElseThrow(() -> new DomainException("Event not found"));
+                    .orElseThrow(() -> new DomainException("Evento não encontrado."));
         }
         if (request.monthId() == null) {
-            throw new DomainException("Expense must have monthId or eventId");
+            throw new DomainException("A despesa precisa estar em um evento.");
         }
         MonthJpaEntity month = months.findById(request.monthId())
-                .orElseThrow(() -> new DomainException("Month not found"));
+                .orElseThrow(() -> new DomainException("Mês não encontrado."));
         return findOrCreateMonthlyEvent(month, defaultGroup(), LocalDateTime.now());
     }
 
     private MonthJpaEntity resolveMonth(CreateExpenseRequest request, EventJpaEntity event) {
         if (request.monthId() != null) {
             return months.findById(request.monthId())
-                    .orElseThrow(() -> new DomainException("Month not found"));
+                    .orElseThrow(() -> new DomainException("Mês não encontrado."));
         }
         return event.getMonth();
     }
 
     private void validateOpen(EventJpaEntity event) {
         if (event.getStatus() != EventStatus.OPEN) {
-            throw new DomainException("Cannot add expense to an event that is not open");
+            throw new DomainException("Não é possível adicionar despesa a um evento que não está aberto.");
         }
     }
 
@@ -480,7 +480,7 @@ public class ExpenseUseCase {
 
     private GroupJpaEntity defaultGroup() {
         return groups.findFirstByActiveTrueOrderByCreatedAtAsc()
-                .orElseThrow(() -> new DomainException("Group not found"));
+                .orElseThrow(() -> new DomainException("Grupo não encontrado."));
     }
 
     private List<ExpensePayerRequest> scalePayersForAmount(
@@ -493,7 +493,7 @@ public class ExpenseUseCase {
             return payerRequests;
         }
         if (payerRequests.size() != 1) {
-            throw new DomainException("Installments currently support a single payer");
+            throw new DomainException("O parcelamento permite apenas um pagador.");
         }
         return List.of(new ExpensePayerRequest(payerRequests.get(0).userId(), targetAmount));
     }
@@ -512,7 +512,7 @@ public class ExpenseUseCase {
             return request.payers();
         }
         if (request.payerId() == null) {
-            throw new DomainException("Expense must have at least one payer");
+            throw new DomainException("A despesa precisa ter ao menos um pagador.");
         }
         return new ArrayList<>(List.of(new ExpensePayerRequest(request.payerId(), request.amount())));
     }
@@ -533,21 +533,21 @@ public class ExpenseUseCase {
                     .map(userId -> new ParticipantSplit(userId, 1, null))
                     .toList();
         } else {
-            throw new DomainException("Expense must have at least one participant");
+            throw new DomainException("A despesa precisa ter ao menos um participante.");
         }
         if (participants.stream().map(ParticipantSplit::userId).distinct().count() != participants.size()) {
-            throw new DomainException("Expense cannot have duplicated participants");
+            throw new DomainException("A despesa não pode ter participantes repetidos.");
         }
         if (participants.stream().anyMatch(participant -> participant.userId() == null)) {
-            throw new DomainException("Expense participant user is required");
+            throw new DomainException("Informe o participante da despesa.");
         }
         if (participants.stream().anyMatch(participant -> participant.shareCount() <= 0)) {
-            throw new DomainException("Participant share count must be greater than zero");
+            throw new DomainException("A cota do participante precisa ser maior que zero.");
         }
         if (participants.stream().anyMatch(participant ->
                 participant.shareDescription() != null && participant.shareDescription().length() > 160
         )) {
-            throw new DomainException("Participant share description must have at most 160 characters");
+            throw new DomainException("A descrição da cota pode ter no máximo 160 caracteres.");
         }
         return participants;
     }
@@ -561,20 +561,20 @@ public class ExpenseUseCase {
 
     private void validatePayersTotal(BigDecimal amount, List<ExpensePayerRequest> payers) {
         if (payers.isEmpty()) {
-            throw new DomainException("Expense must have at least one payer");
+            throw new DomainException("A despesa precisa ter ao menos um pagador.");
         }
         if (payers.stream().map(ExpensePayerRequest::userId).distinct().count() != payers.size()) {
-            throw new DomainException("Expense cannot have duplicated payers");
+            throw new DomainException("A despesa não pode ter pagadores repetidos.");
         }
         if (payers.stream().anyMatch(payer -> payer.amount().compareTo(BigDecimal.ZERO) <= 0)) {
-            throw new DomainException("Payer amount must be greater than zero");
+            throw new DomainException("O valor pago precisa ser maior que zero.");
         }
         BigDecimal expected = amount.setScale(2, RoundingMode.HALF_UP);
         BigDecimal totalPaid = payers.stream()
                 .map(payer -> payer.amount().setScale(2, RoundingMode.HALF_UP))
                 .reduce(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP), BigDecimal::add);
         if (expected.compareTo(totalPaid) != 0) {
-            throw new DomainException("Total paid by payers must match expense amount");
+            throw new DomainException("O total pago precisa bater com o valor da despesa.");
         }
     }
 

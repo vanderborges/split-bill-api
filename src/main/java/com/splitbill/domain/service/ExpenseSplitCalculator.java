@@ -16,7 +16,7 @@ public class ExpenseSplitCalculator {
 
     public List<ParticipantShare> splitEqually(BigDecimal amount, List<UUID> participantIds) {
         if (participantIds == null) {
-            throw new DomainException("Expense must have at least one participant");
+            throw new DomainException("A despesa precisa ter ao menos um participante.");
         }
         return splitByShares(amount, participantIds.stream()
                 .map(userId -> new ParticipantSplit(userId, 1, null))
@@ -25,16 +25,16 @@ public class ExpenseSplitCalculator {
 
     public List<ParticipantShare> splitByShares(BigDecimal amount, List<ParticipantSplit> participants) {
         if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new DomainException("Expense amount must be greater than zero");
+            throw new DomainException("O valor da despesa precisa ser maior que zero.");
         }
         if (participants == null || participants.isEmpty()) {
-            throw new DomainException("Expense must have at least one participant");
+            throw new DomainException("A despesa precisa ter ao menos um participante.");
         }
         if (participants.stream().anyMatch(participant -> participant.fixedAmount() != null)) {
             return splitByFixedAmounts(amount, participants);
         }
         if (participants.stream().anyMatch(participant -> participant.shareCount() <= 0)) {
-            throw new DomainException("Participant share count must be greater than zero");
+            throw new DomainException("A cota do participante precisa ser maior que zero.");
         }
 
         BigDecimal normalizedAmount = amount.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
@@ -73,17 +73,17 @@ public class ExpenseSplitCalculator {
      */
     private List<ParticipantShare> splitByFixedAmounts(BigDecimal amount, List<ParticipantSplit> participants) {
         if (participants.stream().anyMatch(participant -> participant.fixedAmount() == null)) {
-            throw new DomainException("Informe o valor de todos os participantes");
+            throw new DomainException("Informe o valor de todos os participantes.");
         }
         if (participants.stream().anyMatch(participant -> participant.fixedAmount().compareTo(BigDecimal.ZERO) <= 0)) {
-            throw new DomainException("O valor de cada participante precisa ser maior que zero");
+            throw new DomainException("O valor de cada participante precisa ser maior que zero.");
         }
         BigDecimal expected = amount.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
         BigDecimal total = participants.stream()
                 .map(participant -> participant.fixedAmount().setScale(MONEY_SCALE, RoundingMode.HALF_UP))
                 .reduce(BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP), BigDecimal::add);
         if (total.compareTo(expected) != 0) {
-            throw new DomainException("A soma dos valores dos participantes precisa bater com o valor da despesa");
+            throw new DomainException("A soma dos valores dos participantes precisa bater com o valor da despesa.");
         }
         return participants.stream()
                 .map(participant -> new ParticipantShare(

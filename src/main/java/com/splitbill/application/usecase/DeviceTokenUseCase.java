@@ -31,7 +31,7 @@ public class DeviceTokenUseCase {
     @Transactional
     public void register(UUID userId, String token, String platform) {
         UserJpaEntity user = users.findById(userId)
-                .orElseThrow(() -> new DomainException("User not found"));
+                .orElseThrow(() -> new DomainException("Usuário não encontrado."));
         LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
         // Mesmo aparelho logado em outra conta: o token passa pra conta nova
         // (senao a pessoa anterior continuaria recebendo push aqui).

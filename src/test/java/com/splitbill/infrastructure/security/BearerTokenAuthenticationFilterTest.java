@@ -30,7 +30,7 @@ class BearerTokenAuthenticationFilterTest {
 
     @Test
     void ignoresInvalidBearerTokenOnLoginEndpoint() throws ServletException, IOException {
-        when(tokens.resolveUser("expired")).thenThrow(new DomainException("Expired token"));
+        when(tokens.resolveUser("expired")).thenThrow(new DomainException("Sessão expirada. Entre novamente."));
         MockHttpServletRequest request = request("POST", "/auth/login");
         request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer expired");
         MockHttpServletResponse response = new MockHttpServletResponse();
@@ -45,7 +45,7 @@ class BearerTokenAuthenticationFilterTest {
 
     @Test
     void rejectsInvalidBearerTokenOnProtectedEndpoint() throws ServletException, IOException {
-        when(tokens.resolveUser("expired")).thenThrow(new DomainException("Expired token"));
+        when(tokens.resolveUser("expired")).thenThrow(new DomainException("Sessão expirada. Entre novamente."));
         MockHttpServletRequest request = request("GET", "/users");
         request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer expired");
         MockHttpServletResponse response = new MockHttpServletResponse();
