@@ -43,6 +43,12 @@ public class EventJpaEntity {
     @JoinColumn(name = "group_id", nullable = false)
     private GroupJpaEntity group;
 
+    // Quem recebe os pagamentos deste evento (escolhido no "Fechar
+    // evento"). Nulo = sugestao de pagamentos entre devedores e credores.
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "receiver_user_id")
+    private UserJpaEntity receiver;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
@@ -98,6 +104,14 @@ public class EventJpaEntity {
 
     public void setMonth(MonthJpaEntity month) {
         this.month = month;
+    }
+
+    public UserJpaEntity getReceiver() {
+        return receiver;
+    }
+
+    public void setReceiver(UserJpaEntity receiver) {
+        this.receiver = receiver;
     }
 
     public GroupJpaEntity getGroup() {

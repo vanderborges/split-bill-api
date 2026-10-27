@@ -1,14 +1,17 @@
 package com.splitbill.adapters.input.rest;
 
 import com.splitbill.application.dto.EventSettlementResponse;
+import com.splitbill.application.dto.MyPaymentResponse;
 import com.splitbill.application.dto.UpdateSettlementStatusRequest;
 import com.splitbill.application.usecase.EventSettlementUseCase;
 import com.splitbill.application.usecase.EventUseCase;
+import com.splitbill.application.usecase.NotificationUseCase;
 import com.splitbill.domain.exception.DomainException;
 import com.splitbill.infrastructure.security.CurrentUser;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -23,15 +26,18 @@ public class EventSettlementController {
 
     private final EventSettlementUseCase settlements;
     private final EventUseCase events;
+    private final NotificationUseCase notifications;
     private final CurrentUser currentUser;
 
     public EventSettlementController(
             EventSettlementUseCase settlements,
             EventUseCase events,
+            NotificationUseCase notifications,
             CurrentUser currentUser
     ) {
         this.settlements = settlements;
         this.events = events;
+        this.notifications = notifications;
         this.currentUser = currentUser;
     }
 
@@ -40,13 +46,25 @@ public class EventSettlementController {
         return settlements.listByEvent(eventId, currentUser.id());
     }
 
+    /** Botao "Pagar": o acerto de quem esta logado, com o texto da cobranca. */
+    @GetMapping("/mine")
+    public MyPaymentResponse myPayment(@PathVariable UUID eventId) {
+        return notifications.myPayment(eventId, currentUser.id());
+    }
+
+    /** "Confirmar pagamento" de quem devia: avisa os admins pra conferirem. */
+    @PostMapping("/mine/inform")
+    public MyPaymentResponse informPayment(@PathVariable UUID eventId) {
+        return notifications.informPayment(eventId, currentUser.id());
+    }
+
     @PutMapping("/{settlementId}")
     public EventSettlementResponse updateStatus(
             @PathVariable UUID eventId,
             @PathVariable UUID settlementId,
             @Valid @RequestBody UpdateSettlementStatusRequest request
     ) {
-        EventSettlementResponse response = settlements.updateStatus(settlementId, request, currentUser.id());
+        EventSettlementResponse response = notifications.reviewSettlement(settlementId, request, currentUser.id());
         closeIfFullySettled(eventId);
         return response;
     }

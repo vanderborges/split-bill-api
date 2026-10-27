@@ -17,6 +17,9 @@ public record EventResponse(
         Integer month,
         Integer year,
         LocalDateTime createdAt,
-        LocalDateTime closedAt
+        LocalDateTime closedAt,
+        // Quem recebe os pagamentos do evento (null = sugestao de pagamentos).
+        UUID receiverUserId,
+        String receiverNickname
 ) {
 }

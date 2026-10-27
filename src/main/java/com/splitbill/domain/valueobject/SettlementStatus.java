@@ -5,5 +5,8 @@ public enum SettlementStatus {
     PAID,
     PAID_TO_ADMIN,
     RECEIVED_FROM_ADMIN,
-    CONFIRMED
+    CONFIRMED,
+    // Quem devia tocou em "Pagar" > "Confirmar pagamento": falta o admin
+    // confirmar (vira PAID) ou recusar (volta pra PENDING).
+    INFORMED
 }

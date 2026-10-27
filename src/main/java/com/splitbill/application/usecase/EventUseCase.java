@@ -259,6 +259,17 @@ public class EventUseCase {
         if (event.getType() == EventType.MONTHLY && event.getMonth() != null) {
             requirePreviousMonthsNotOpen(event);
         }
+        // App novo manda a escolha feita no "Fechar evento"; app antigo e o
+        // fechamento automatico nao escolhem, e vale o recebedor do grupo
+        // (comportamento de antes de 27/10/2026).
+        boolean chosen = request != null && Boolean.TRUE.equals(request.receiverChosen());
+        if (chosen) {
+            event.setReceiver(request.receiverUserId() == null
+                    ? null
+                    : eventReceiver(event, request.receiverUserId()));
+        } else {
+            event.setReceiver(event.getGroup().getReceiver());
+        }
 
         if (request != null && request.consolidateToEventId() != null) {
             EventJpaEntity target = events.findById(request.consolidateToEventId())
@@ -280,6 +291,27 @@ public class EventUseCase {
         }
 
         event.setStatus(EventStatus.SETTLING);
+    }
+
+    /**
+     * Quem recebe os pagamentos do evento: alguem com conta (pessoa sem
+     * cadastro nao tem PIX nem abre o app) que participa deste evento.
+     */
+    private UserJpaEntity eventReceiver(EventJpaEntity event, UUID userId) {
+        UserJpaEntity user = users.findById(userId)
+                .filter(candidate -> candidate.isActive() && candidate.getDeletedAt() == null)
+                .orElseThrow(() -> new DomainException("Pessoa nao encontrada"));
+        if (user.isPlaceholder()) {
+            throw new DomainException("Pessoa sem cadastro nao pode receber os pagamentos");
+        }
+        boolean participates = groupMembers.findByGroupIdAndUserId(event.getGroup().getId(), userId)
+                .filter(GroupMemberJpaEntity::isActive)
+                .map(member -> member.participatesIn(event.getId()))
+                .orElse(false);
+        if (!participates) {
+            throw new DomainException("Quem recebe os pagamentos precisa participar deste evento");
+        }
+        return user;
     }
 
     /**
@@ -324,7 +356,8 @@ public class EventUseCase {
             throw new DomainException("Abra o evento para pagamento antes de fechar");
         }
         boolean hasPendingPayment = settlements.listByEvent(id, requesterId).stream()
-                .anyMatch(settlement -> settlement.status() == SettlementStatus.PENDING);
+                .anyMatch(settlement -> settlement.status() == SettlementStatus.PENDING
+                        || settlement.status() == SettlementStatus.INFORMED);
         if (hasPendingPayment) {
             throw new DomainException(
                     "Existem pagamentos pendentes. Confirme todos os pagamentos antes de fechar o evento.");
@@ -543,7 +576,9 @@ public class EventUseCase {
                 month == null ? null : month.getMonth(),
                 month == null ? null : month.getYear(),
                 event.getCreatedAt(),
-                event.getClosedAt()
+                event.getClosedAt(),
+                event.getReceiver() == null ? null : event.getReceiver().getId(),
+                event.getReceiver() == null ? null : event.getReceiver().getNickname()
         );
     }
 

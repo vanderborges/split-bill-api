@@ -113,6 +113,11 @@ public class EventSettlementUseCase {
                 .orElseThrow(() -> new DomainException("Admin user not found"));
 
         SettlementStatus status = normalizeStatus(request.status());
+        // "Pagamento informado" so quem deve marca (botao Pagar); o admin
+        // confirma (PAID) ou devolve pra pendente.
+        if (status != SettlementStatus.PAID && status != SettlementStatus.PENDING) {
+            throw new DomainException("Status de pagamento invalido");
+        }
         LocalDateTime now = LocalDateTime.now();
         settlement.setStatus(status);
         settlement.setUpdatedByAdmin(admin);

@@ -57,6 +57,10 @@ public class NotificationJpaEntity {
 
     public static final String TYPE_BILLING = "BILLING";
     public static final String TYPE_MEMBER_JOINED = "MEMBER_JOINED";
+    // Fluxo "Pagar": quem devia informou o pagamento (vai pros admins) e o
+    // admin confirmou ou recusou (vai pra quem pagou).
+    public static final String TYPE_PAYMENT_INFORMED = "PAYMENT_INFORMED";
+    public static final String TYPE_PAYMENT_REVIEWED = "PAYMENT_REVIEWED";
 
     public String getType() {
         return type;

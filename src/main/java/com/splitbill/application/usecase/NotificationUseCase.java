@@ -1,15 +1,23 @@
 package com.splitbill.application.usecase;
 
 import com.splitbill.application.dto.EventSettlementResponse;
+import com.splitbill.application.dto.MyPaymentResponse;
+import com.splitbill.application.dto.UpdateSettlementStatusRequest;
 import com.splitbill.application.dto.NotificationResponse;
 import com.splitbill.application.dto.PaymentSuggestionResponse;
 import com.splitbill.domain.exception.DomainException;
 import com.splitbill.domain.valueobject.SettlementRole;
 import com.splitbill.domain.valueobject.SettlementStatus;
+import com.splitbill.domain.valueobject.EventStatus;
+import com.splitbill.domain.valueobject.GroupMemberRole;
 import com.splitbill.infrastructure.persistence.entity.EventJpaEntity;
+import com.splitbill.infrastructure.persistence.entity.EventSettlementJpaEntity;
+import com.splitbill.infrastructure.persistence.entity.GroupMemberJpaEntity;
 import com.splitbill.infrastructure.persistence.entity.NotificationJpaEntity;
 import com.splitbill.infrastructure.persistence.entity.UserJpaEntity;
 import com.splitbill.infrastructure.persistence.repository.EventJpaRepository;
+import com.splitbill.infrastructure.persistence.repository.EventSettlementJpaRepository;
+import com.splitbill.infrastructure.persistence.repository.GroupMemberJpaRepository;
 import com.splitbill.infrastructure.persistence.repository.NotificationJpaRepository;
 import com.splitbill.infrastructure.persistence.repository.UserJpaRepository;
 import com.splitbill.application.event.NotificationCreatedEvent;
@@ -37,6 +45,8 @@ public class NotificationUseCase {
     private final GroupUseCase groupRules;
     private final MonthlyReportUseCase reports;
     private final ApplicationEventPublisher eventPublisher;
+    private final EventSettlementJpaRepository settlementRows;
+    private final GroupMemberJpaRepository members;
 
     public NotificationUseCase(
             NotificationJpaRepository notifications,
@@ -45,7 +55,9 @@ public class NotificationUseCase {
             EventSettlementUseCase settlements,
             GroupUseCase groupRules,
             MonthlyReportUseCase reports,
-            ApplicationEventPublisher eventPublisher
+            ApplicationEventPublisher eventPublisher,
+            EventSettlementJpaRepository settlementRows,
+            GroupMemberJpaRepository members
     ) {
         this.notifications = notifications;
         this.events = events;
@@ -54,6 +66,8 @@ public class NotificationUseCase {
         this.groupRules = groupRules;
         this.reports = reports;
         this.eventPublisher = eventPublisher;
+        this.settlementRows = settlementRows;
+        this.members = members;
     }
 
     @Transactional(readOnly = true)
@@ -224,6 +238,118 @@ public class NotificationUseCase {
             );
         }
         return new BillingMessage(message.toString(), null, null);
+    }
+
+    /**
+     * Botao "Pagar" do Relatorio: o acerto de quem esta logado (ou do
+     * titular da cobranca vinculada dele) neste evento, com o mesmo texto da
+     * notificacao de cobranca.
+     */
+    @Transactional
+    public MyPaymentResponse myPayment(UUID eventId, UUID requesterId) {
+        EventJpaEntity event = events.findById(eventId)
+                .orElseThrow(() -> new DomainException("Event not found"));
+        EventSettlementResponse settlement = payerSettlement(event, requesterId);
+        List<PaymentSuggestionResponse> suggestions = reports.getPaymentSuggestions(eventId, requesterId);
+        BillingMessage billingMessage = buildBillingMessage(event, settlement, suggestions);
+        return new MyPaymentResponse(
+                settlement.id(),
+                settlement.status(),
+                settlement.amount(),
+                billingMessage.text(),
+                billingMessage.pixKey(),
+                billingMessage.receiverName()
+        );
+    }
+
+    /**
+     * "Confirmar pagamento" de quem devia: o acerto fica "pagamento
+     * informado" (os vinculados acompanham) e os admins do grupo recebem um
+     * aviso pra confirmar ou devolver pra pendente.
+     */
+    @Transactional
+    public MyPaymentResponse informPayment(UUID eventId, UUID requesterId) {
+        EventJpaEntity event = events.findById(eventId)
+                .orElseThrow(() -> new DomainException("Event not found"));
+        EventSettlementResponse settlement = payerSettlement(event, requesterId);
+        if (settlement.status() != SettlementStatus.PENDING) {
+            throw new DomainException("Esse pagamento ja foi informado");
+        }
+        UserJpaEntity payer = users.findById(requesterId)
+                .orElseThrow(() -> new DomainException("User not found"));
+        LocalDateTime now = LocalDateTime.now();
+        UUID rootId = settlement.userId();
+        settlementRows.findByEventId(eventId).stream()
+                .filter(row -> reports.billingRootId(row.getUser()).equals(rootId))
+                .forEach(row -> {
+                    row.setStatus(SettlementStatus.INFORMED);
+                    row.setUpdatedAt(now);
+                });
+
+        String text = event.getGroup().getName() + ": " + payer.getNickname()
+                + " informou o pagamento de " + formatCurrency(settlement.amount())
+                + " no evento " + event.getName() + ". Confirme no Relatório.";
+        members.findByGroupIdAndActiveTrue(event.getGroup().getId()).stream()
+                .filter(member -> member.getRole() == GroupMemberRole.ADMIN)
+                .map(GroupMemberJpaEntity::getUser)
+                .filter(admin -> !admin.isPlaceholder())
+                .forEach(admin -> notify(admin, event, text,
+                        NotificationJpaEntity.TYPE_PAYMENT_INFORMED, payer));
+        return myPayment(eventId, requesterId);
+    }
+
+    /**
+     * Admin marca pago/pendente. Se a pessoa tinha informado o pagamento,
+     * ela recebe um aviso de que foi confirmado ou que voltou pra pendente.
+     */
+    @Transactional
+    public EventSettlementResponse reviewSettlement(
+            UUID settlementId, UpdateSettlementStatusRequest request, UUID adminId) {
+        EventSettlementJpaEntity row = settlementRows.findById(settlementId)
+                .orElseThrow(() -> new DomainException("Settlement not found"));
+        SettlementStatus previous = row.getStatus();
+        EventSettlementResponse response = settlements.updateStatus(settlementId, request, adminId);
+        if (previous == SettlementStatus.INFORMED && !row.getUser().isPlaceholder()) {
+            EventJpaEntity event = row.getEvent();
+            String text = event.getGroup().getName() + ": "
+                    + (response.status() == SettlementStatus.PAID
+                    ? "seu pagamento de " + formatCurrency(response.amount()) + " no evento "
+                            + event.getName() + " foi confirmado."
+                    : "seu pagamento de " + formatCurrency(response.amount()) + " no evento "
+                            + event.getName() + " não foi confirmado e voltou para pendente.");
+            UserJpaEntity admin = users.findById(adminId)
+                    .orElseThrow(() -> new DomainException("User not found"));
+            notify(row.getUser(), event, text, NotificationJpaEntity.TYPE_PAYMENT_REVIEWED, admin);
+        }
+        return response;
+    }
+
+    private EventSettlementResponse payerSettlement(EventJpaEntity event, UUID requesterId) {
+        if (event.getStatus() != EventStatus.SETTLING) {
+            throw new DomainException("O pagamento so pode ser feito com o evento aguardando pagamento");
+        }
+        UserJpaEntity requester = users.findById(requesterId)
+                .orElseThrow(() -> new DomainException("User not found"));
+        UUID rootId = reports.billingRootId(requester);
+        return settlements.listByEvent(event.getId(), requesterId).stream()
+                .filter(settlement -> settlement.userId().equals(rootId))
+                .filter(settlement -> settlement.role() == SettlementRole.DEBTOR)
+                .findFirst()
+                .orElseThrow(() -> new DomainException("Voce nao tem pagamento a fazer neste evento"));
+    }
+
+    private void notify(UserJpaEntity recipient, EventJpaEntity event, String text, String type, UserJpaEntity author) {
+        NotificationJpaEntity notification = new NotificationJpaEntity();
+        notification.setId(UUID.randomUUID());
+        notification.setRecipient(recipient);
+        notification.setEvent(event);
+        notification.setMessage(text.length() > 500 ? text.substring(0, 500) : text);
+        notification.setType(type);
+        notification.setCreatedBy(author);
+        notification.setCreatedAt(LocalDateTime.now(ZoneOffset.UTC));
+        notifications.save(notification);
+        eventPublisher.publishEvent(new NotificationCreatedEvent(
+                notification.getId(), recipient.getId(), notification.getMessage(), notification.getType()));
     }
 
     private String formatCurrency(java.math.BigDecimal amount) {
