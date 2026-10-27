@@ -123,6 +123,9 @@ public class EventUseCase {
         groupRules.requireAdmin(request.groupId(), requesterId);
         GroupJpaEntity group = groups.findById(request.groupId())
                 .orElseThrow(() -> new DomainException("Group not found"));
+        if (request.type() != EventType.MONTHLY && (request.name() == null || request.name().isBlank())) {
+            throw new DomainException("Informe o nome do evento");
+        }
         MonthJpaEntity month = null;
         if (request.monthId() != null) {
             month = months.findById(request.monthId())
@@ -134,16 +137,20 @@ public class EventUseCase {
             throw new DomainException("Monthly event must have monthId or month/year");
         }
         if (request.type() == EventType.MONTHLY) {
-            events.findByMonthIdAndTypeAndGroupId(month.getId(), EventType.MONTHLY, group.getId())
-                    .ifPresent(event -> {
-                        throw new DomainException("Monthly event already exists");
-                    });
+            if (events.findByMonthIdAndTypeAndGroupId(month.getId(), EventType.MONTHLY, group.getId()).isPresent()) {
+                throw new DomainException("Ja existe um evento mensal "
+                        + String.format("%02d/%d", month.getMonth(), month.getYear()) + " neste grupo");
+            }
             requireNextMonthWhileOneIsOpen(group, month);
         }
 
         EventJpaEntity event = new EventJpaEntity();
         event.setId(UUID.randomUUID());
-        event.setName(request.name());
+        // Evento mensal se chama sempre pelo mes (MM/AAAA): o app nao pede
+        // mais nome pra ele.
+        event.setName(request.type() == EventType.MONTHLY
+                ? String.format("%02d/%d", month.getMonth(), month.getYear())
+                : request.name().trim());
         event.setDescription(request.description());
         event.setType(request.type());
         event.setStatus(EventStatus.OPEN);

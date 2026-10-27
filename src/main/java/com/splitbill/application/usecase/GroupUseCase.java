@@ -16,18 +16,23 @@ import com.splitbill.infrastructure.persistence.repository.UserJpaRepository;
 import com.splitbill.infrastructure.persistence.repository.EventJpaRepository;
 import com.splitbill.infrastructure.persistence.repository.ExpenseJpaRepository;
 import com.splitbill.infrastructure.persistence.entity.EventJpaEntity;
+import com.splitbill.infrastructure.persistence.entity.ExpenseJpaEntity;
 import com.splitbill.domain.valueobject.EventStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class GroupUseCase {
 
-    private static final int MAX_ADMINS_PER_GROUP = 2;
+    private static final int MAX_ADMINS_PER_GROUP = 3;
 
     private final GroupJpaRepository groups;
     private final GroupMemberJpaRepository members;
@@ -167,10 +172,39 @@ public class GroupUseCase {
             }
         }
         final UUID filterEventId = scopeEventId;
-        return members.findByGroupIdAndActiveTrue(groupId).stream()
+        List<GroupMemberResponse> listed = new ArrayList<>(members.findByGroupIdAndActiveTrue(groupId).stream()
                 .filter(member -> filterEventId != null
                         ? member.participatesIn(filterEventId)
                         : !member.isTemporary() || isTemporaryEventOpen(member))
+                .map(this::toMemberResponse)
+                .toList());
+        if (filterEventId != null) {
+            listed.addAll(removedMembersWithExpensesIn(groupId, filterEventId, listed));
+        }
+        return listed;
+    }
+
+    /**
+     * Quem foi removido do grupo mas tem despesa neste evento continua
+     * aparecendo nele (form de despesa) ate o evento acabar - senao, ao
+     * editar uma despesa dele, ele sairia da divisao sem ninguem pedir.
+     * Vem com {@code active = false}.
+     */
+    private List<GroupMemberResponse> removedMembersWithExpensesIn(
+            UUID groupId, UUID eventId, List<GroupMemberResponse> alreadyListed) {
+        Set<UUID> listedUserIds = alreadyListed.stream()
+                .map(GroupMemberResponse::userId)
+                .collect(Collectors.toSet());
+        Set<UUID> expenseUserIds = new LinkedHashSet<>();
+        for (ExpenseJpaEntity expense : expenses.findByEventIdAndDeletedAtIsNull(eventId)) {
+            expense.getParticipants().forEach(participant -> expenseUserIds.add(participant.getUser().getId()));
+            expense.getPayers().forEach(payer -> expenseUserIds.add(payer.getUser().getId()));
+        }
+        return expenseUserIds.stream()
+                .filter(userId -> !listedUserIds.contains(userId))
+                .map(userId -> members.findByGroupIdAndUserId(groupId, userId).orElse(null))
+                .filter(member -> member != null && !member.isActive())
+                .filter(member -> member.getUser().getDeletedAt() == null)
                 .map(this::toMemberResponse)
                 .toList();
     }
@@ -250,7 +284,7 @@ public class GroupUseCase {
         if (request.role() == GroupMemberRole.ADMIN
                 && members.countByGroupIdAndRoleAndActiveTrue(groupId, GroupMemberRole.ADMIN) >= MAX_ADMINS_PER_GROUP
                 && !members.existsByGroupIdAndUserIdAndRoleAndActiveTrue(groupId, request.userId(), GroupMemberRole.ADMIN)) {
-            throw new DomainException("Group can have at most two admins");
+            throw new DomainException("O grupo pode ter no maximo " + MAX_ADMINS_PER_GROUP + " admins");
         }
 
         GroupMemberJpaEntity member = members.findByGroupIdAndUserId(groupId, request.userId())
@@ -291,8 +325,12 @@ public class GroupUseCase {
     @Transactional
     public void leave(UUID groupId, UUID userId) {
         requireMembership(groupId, userId);
-        if (hasPendingBalance(groupId, userId)) {
-            throw new DomainException("Settle your open event balances before leaving the group");
+        List<String> pendingEvents = eventsWithPendingBalance(groupId, userId);
+        if (!pendingEvents.isEmpty()) {
+            throw new DomainException("Voce ainda tem valores em aberto "
+                    + (pendingEvents.size() == 1 ? "no evento " : "nos eventos ")
+                    + String.join(", ", pendingEvents)
+                    + ". Acerte esses pagamentos antes de sair do grupo.");
         }
         deactivateMember(groupId, userId);
     }
@@ -326,11 +364,13 @@ public class GroupUseCase {
         member.setUpdatedAt(LocalDateTime.now());
     }
 
-    private boolean hasPendingBalance(UUID groupId, UUID userId) {
+    private List<String> eventsWithPendingBalance(UUID groupId, UUID userId) {
         return events.findByGroupIdAndDeletedAtIsNull(groupId).stream()
                 .filter(event -> event.getStatus() != EventStatus.CLOSED)
-                .map(event -> balanceForEvent(event, userId))
-                .anyMatch(balance -> balance.compareTo(java.math.BigDecimal.ZERO) != 0);
+                .filter(event -> balanceForEvent(event, userId).compareTo(java.math.BigDecimal.ZERO) != 0)
+                .map(EventJpaEntity::getName)
+                .sorted()
+                .toList();
     }
 
     private java.math.BigDecimal balanceForEvent(EventJpaEntity event, UUID userId) {

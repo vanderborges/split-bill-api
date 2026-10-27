@@ -37,8 +37,10 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -350,10 +352,15 @@ public class ExpenseUseCase {
         if (payersById.size() != payerRequests.stream().map(ExpensePayerRequest::userId).distinct().count()) {
             throw new DomainException("One or more payers were not found");
         }
-        validateUsersBelongToEventGroup(expense.getEvent(), participantIds);
+        // Quem ja estava nesta despesa pode continuar nela mesmo removido do
+        // grupo: a pessoa so some de vez quando o evento acaba.
+        Set<UUID> alreadyInExpense = new HashSet<>();
+        expense.getParticipants().forEach(participant -> alreadyInExpense.add(participant.getUser().getId()));
+        expense.getPayers().forEach(payer -> alreadyInExpense.add(payer.getUser().getId()));
+        validateUsersBelongToEventGroup(expense.getEvent(), participantIds, alreadyInExpense);
         validateUsersBelongToEventGroup(expense.getEvent(), payerRequests.stream()
                 .map(ExpensePayerRequest::userId)
-                .toList());
+                .toList(), alreadyInExpense);
 
         UserJpaEntity mainPayer = payersById.get(payerRequests.get(0).userId());
         List<ParticipantShare> shares = splitCalculator.splitByShares(amount, participantRequests);
@@ -389,14 +396,17 @@ public class ExpenseUseCase {
         }
     }
 
-    private void validateUsersBelongToEventGroup(EventJpaEntity event, List<UUID> userIds) {
+    private void validateUsersBelongToEventGroup(EventJpaEntity event, List<UUID> userIds, Set<UUID> alreadyInExpense) {
         for (UUID userId : userIds) {
+            if (alreadyInExpense.contains(userId)) {
+                continue;
+            }
             boolean participates = groupMembers.findByGroupIdAndUserId(event.getGroup().getId(), userId)
                     .filter(GroupMemberJpaEntity::isActive)
                     .map(member -> member.participatesIn(event.getId()))
                     .orElse(false);
             if (!participates) {
-                throw new DomainException("Expense users must belong to the event group");
+                throw new DomainException("Todas as pessoas da despesa precisam participar deste evento");
             }
         }
     }

@@ -93,12 +93,13 @@ public class MonthlyReportUseCase {
         EventJpaEntity event = events.findById(eventId)
                 .orElseThrow(() -> new DomainException("Event not found"));
         groupRules.requireEventAccess(event, requesterId);
-        Set<UUID> groupedUserIds = billingGroupUserIds(event.getGroup().getId(), billingUserId);
+        List<ExpenseJpaEntity> eventExpenses = expenses.findByEventIdAndDeletedAtIsNull(eventId);
+        Set<UUID> groupedUserIds = billingGroupUserIds(event.getGroup().getId(), eventExpenses, billingUserId);
         if (groupedUserIds.isEmpty()) {
-            throw new DomainException("Balance user not found in event group");
+            throw new DomainException("Pessoa nao encontrada neste evento");
         }
 
-        return expenses.findByEventIdAndDeletedAtIsNull(eventId).stream()
+        return eventExpenses.stream()
                 .map(expense -> toBalanceDetail(expense, groupedUserIds))
                 .filter(detail -> detail.consumed().compareTo(BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP)) != 0
                         || detail.paid().compareTo(BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP)) != 0)
@@ -291,10 +292,26 @@ public class MonthlyReportUseCase {
         return current;
     }
 
-    private Set<UUID> billingGroupUserIds(UUID groupId, UUID billingUserId) {
-        return groupMembers.findByGroupIdAndActiveTrue(groupId).stream()
+    /**
+     * Quem entra na linha de {@code billingUserId}: os integrantes ativos
+     * vinculados a ele e tambem quem aparece nas despesas do evento - quem
+     * foi removido do grupo com despesa em aberto continua no relatorio
+     * (calculateRawTotals ja soma pelas despesas) e o detalhe dele nao pode
+     * dar erro.
+     */
+    private Set<UUID> billingGroupUserIds(UUID groupId, List<ExpenseJpaEntity> eventExpenses, UUID billingUserId) {
+        Map<UUID, UserJpaEntity> candidates = new LinkedHashMap<>();
+        groupMembers.findByGroupIdAndActiveTrue(groupId).stream()
                 .map(GroupMemberJpaEntity::getUser)
                 .filter(user -> user.getDeletedAt() == null)
+                .forEach(user -> candidates.putIfAbsent(user.getId(), user));
+        for (ExpenseJpaEntity expense : eventExpenses) {
+            expense.getParticipants().forEach(participant ->
+                    candidates.putIfAbsent(participant.getUser().getId(), participant.getUser()));
+            expense.getPayers().forEach(payer ->
+                    candidates.putIfAbsent(payer.getUser().getId(), payer.getUser()));
+        }
+        return candidates.values().stream()
                 .filter(user -> resolveBillingUser(user).getId().equals(billingUserId))
                 .map(UserJpaEntity::getId)
                 .collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new));
