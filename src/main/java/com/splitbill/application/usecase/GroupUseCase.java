@@ -215,10 +215,10 @@ public class GroupUseCase {
         requireAdmin(groupId, requesterId);
         return members.findByGroupIdAndActiveTrue(groupId).stream()
                 .filter(GroupMemberJpaEntity::isTemporary)
-                // Temporario do grupo sai da lista quando todos os eventos
-                // com despesa dele fecham; o de evento antigo continua
-                // aparecendo (oculto) pra poder ir pra outro evento.
-                .filter(member -> !member.isGroupTemporary() || isTemporaryListed(member))
+                // Sai da lista quando os eventos dele fecham: o do grupo,
+                // quando todos os eventos com despesa dele fecham; o de um
+                // evento (modelo antigo), quando esse evento fecha.
+                .filter(this::isTemporaryListed)
                 .map(this::toMemberResponse)
                 .toList();
     }
@@ -249,6 +249,11 @@ public class GroupUseCase {
                 .orElseThrow(() -> new DomainException("Integrante do grupo não encontrado."));
         if (!member.isTemporary()) {
             throw new DomainException("Essa pessoa já é integrante do grupo.");
+        }
+        // So entra de vez no grupo quem ja criou conta (escolheu o nome no
+        // convite); so o nome, sem cadastro, continua temporario.
+        if (member.getUser().isPlaceholder()) {
+            throw new DomainException("Só é possível tornar integrante quem já criou conta no app.");
         }
         member.setTemporary(false);
         member.setTemporaryEvent(null);
