@@ -61,6 +61,8 @@ public class NotificationJpaEntity {
     // admin confirmou ou recusou (vai pra quem pagou).
     public static final String TYPE_PAYMENT_INFORMED = "PAYMENT_INFORMED";
     public static final String TYPE_PAYMENT_REVIEWED = "PAYMENT_REVIEWED";
+    // "Avisar participantes": despesa nova lançada no evento.
+    public static final String TYPE_EXPENSE_CREATED = "EXPENSE_CREATED";
 
     public String getType() {
         return type;

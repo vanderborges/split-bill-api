@@ -1,6 +1,8 @@
 package com.splitbill.application.usecase;
 
 import com.splitbill.application.dto.EventSettlementResponse;
+import com.splitbill.application.dto.ExpenseParticipantResponse;
+import com.splitbill.application.dto.ExpenseResponse;
 import com.splitbill.application.dto.MyPaymentResponse;
 import com.splitbill.application.dto.UpdateSettlementStatusRequest;
 import com.splitbill.application.dto.NotificationResponse;
@@ -29,7 +31,9 @@ import java.text.NumberFormat;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Locale;
 import java.util.UUID;
 
@@ -353,6 +357,47 @@ public class NotificationUseCase {
                 .filter(settlement -> settlement.role() == SettlementRole.DEBTOR)
                 .findFirst()
                 .orElseThrow(() -> new DomainException("Você não tem pagamento a fazer neste evento."));
+    }
+
+    /**
+     * "Avisar participantes" ao cadastrar despesa: cada participante (menos
+     * quem lançou e pessoa sem cadastro) recebe no sininho e por push quem
+     * lançou, o valor e a parte dele. Devolve quantos foram avisados.
+     */
+    @Transactional
+    public int notifyExpenseCreated(ExpenseResponse expense, UUID requesterId) {
+        if (expense.eventId() == null || expense.participants() == null) {
+            return 0;
+        }
+        EventJpaEntity event = events.findById(expense.eventId())
+                .orElseThrow(() -> new DomainException("Evento não encontrado."));
+        UserJpaEntity author = users.findById(requesterId)
+                .orElseThrow(() -> new DomainException("Usuário não encontrado."));
+        Map<UUID, ExpenseParticipantResponse> byUser = new LinkedHashMap<>();
+        expense.participants().forEach(participant -> byUser.putIfAbsent(participant.userId(), participant));
+
+        int sent = 0;
+        for (ExpenseParticipantResponse participant : byUser.values()) {
+            if (participant.userId().equals(requesterId)) {
+                continue;
+            }
+            UserJpaEntity recipient = users.findById(participant.userId()).orElse(null);
+            if (recipient == null || recipient.isPlaceholder()) {
+                continue;
+            }
+            StringBuilder text = new StringBuilder()
+                    .append(event.getGroup().getName()).append(": ")
+                    .append(author.getNickname()).append(" lançou ")
+                    .append(expense.description()).append(" (")
+                    .append(formatCurrency(expense.amount())).append(") no evento ")
+                    .append(event.getName()).append('.');
+            if (participant.shareAmount() != null) {
+                text.append(" Sua parte: ").append(formatCurrency(participant.shareAmount())).append('.');
+            }
+            notify(recipient, event, text.toString(), NotificationJpaEntity.TYPE_EXPENSE_CREATED, author);
+            sent++;
+        }
+        return sent;
     }
 
     private void notify(UserJpaEntity recipient, EventJpaEntity event, String text, String type, UserJpaEntity author) {

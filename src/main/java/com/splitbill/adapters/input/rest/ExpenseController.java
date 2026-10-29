@@ -3,6 +3,7 @@ package com.splitbill.adapters.input.rest;
 import com.splitbill.application.dto.CreateExpenseRequest;
 import com.splitbill.application.dto.ExpenseResponse;
 import com.splitbill.application.usecase.ExpenseUseCase;
+import com.splitbill.application.usecase.NotificationUseCase;
 import com.splitbill.infrastructure.security.CurrentUser;
 import com.splitbill.domain.exception.DomainException;
 import jakarta.validation.Valid;
@@ -26,10 +27,12 @@ import java.util.UUID;
 public class ExpenseController {
 
     private final ExpenseUseCase expenses;
+    private final NotificationUseCase notifications;
     private final CurrentUser currentUser;
 
-    public ExpenseController(ExpenseUseCase expenses, CurrentUser currentUser) {
+    public ExpenseController(ExpenseUseCase expenses, NotificationUseCase notifications, CurrentUser currentUser) {
         this.expenses = expenses;
+        this.notifications = notifications;
         this.currentUser = currentUser;
     }
 
@@ -50,7 +53,12 @@ public class ExpenseController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public ExpenseResponse create(@Valid @RequestBody CreateExpenseRequest request) {
-        return expenses.create(request, currentUser.id());
+        ExpenseResponse response = expenses.create(request, currentUser.id());
+        // Aviso é efeito colateral: a despesa já foi gravada.
+        if (Boolean.TRUE.equals(request.notifyParticipants())) {
+            notifications.notifyExpenseCreated(response, currentUser.id());
+        }
+        return response;
     }
 
     @PutMapping("/{id}")

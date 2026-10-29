@@ -21,6 +21,8 @@ public record CreateExpenseRequest(
         List<ExpenseParticipantRequest> participants,
         List<ExpensePayerRequest> payers,
         Integer installments,
-        Boolean subscription
+        Boolean subscription,
+        // "Avisar participantes" do app (só na criação); null = app antigo, não avisa.
+        Boolean notifyParticipants
 ) {
 }
