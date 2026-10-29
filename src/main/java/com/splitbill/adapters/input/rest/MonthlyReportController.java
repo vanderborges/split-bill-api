@@ -8,6 +8,7 @@ import com.splitbill.infrastructure.security.CurrentUser;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -38,9 +39,10 @@ public class MonthlyReportController {
     @GetMapping("/events/{eventId}/balances/{userId}/details")
     public List<BalanceExpenseDetailResponse> getBalanceDetails(
             @PathVariable UUID eventId,
-            @PathVariable UUID userId
+            @PathVariable UUID userId,
+            @RequestParam(defaultValue = "false") boolean onlyUser
     ) {
-        return reports.getBalanceDetails(eventId, userId, currentUser.id());
+        return reports.getBalanceDetails(eventId, userId, currentUser.id(), onlyUser);
     }
 
     @GetMapping("/events/{eventId}/payment-suggestions")

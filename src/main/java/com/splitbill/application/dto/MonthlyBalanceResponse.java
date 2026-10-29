@@ -1,6 +1,7 @@
 package com.splitbill.application.dto;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.UUID;
 
 public record MonthlyBalanceResponse(
@@ -10,6 +11,8 @@ public record MonthlyBalanceResponse(
         BigDecimal totalPaid,
         BigDecimal balance,
         // PIX de quem recebe, pro texto de compartilhar do app (null = sem chave).
-        String pixKey
+        String pixKey,
+        // Titular primeiro e depois quem tem cobranca vinculada a ele.
+        List<BalanceMemberResponse> members
 ) {
 }

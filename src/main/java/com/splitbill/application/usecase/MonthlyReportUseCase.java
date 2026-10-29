@@ -1,6 +1,7 @@
 package com.splitbill.application.usecase;
 
 import com.splitbill.application.dto.BalanceExpenseDetailResponse;
+import com.splitbill.application.dto.BalanceMemberResponse;
 import com.splitbill.application.dto.MonthlyBalanceResponse;
 import com.splitbill.application.dto.MonthlyReportResponse;
 import com.splitbill.application.dto.PaymentSuggestionResponse;
@@ -90,11 +91,23 @@ public class MonthlyReportUseCase {
 
     @Transactional(readOnly = true)
     public List<BalanceExpenseDetailResponse> getBalanceDetails(UUID eventId, UUID billingUserId, UUID requesterId) {
+        return getBalanceDetails(eventId, billingUserId, requesterId, false);
+    }
+
+    /**
+     * {@code onlyUser}: so as despesas da propria pessoa, sem somar quem tem
+     * cobranca vinculada a ela (Extrato separa os gastos de cada um).
+     */
+    @Transactional(readOnly = true)
+    public List<BalanceExpenseDetailResponse> getBalanceDetails(
+            UUID eventId, UUID billingUserId, UUID requesterId, boolean onlyUser) {
         EventJpaEntity event = events.findById(eventId)
                 .orElseThrow(() -> new DomainException("Evento não encontrado."));
         groupRules.requireEventAccess(event, requesterId);
         List<ExpenseJpaEntity> eventExpenses = expenses.findByEventIdAndDeletedAtIsNull(eventId);
-        Set<UUID> groupedUserIds = billingGroupUserIds(event.getGroup().getId(), eventExpenses, billingUserId);
+        Set<UUID> groupedUserIds = onlyUser
+                ? Set.of(billingUserId)
+                : billingGroupUserIds(event.getGroup().getId(), eventExpenses, billingUserId);
         if (groupedUserIds.isEmpty()) {
             throw new DomainException("Pessoa não encontrada neste evento.");
         }
@@ -390,6 +403,8 @@ public class MonthlyReportUseCase {
     private static final class BalanceTotals {
         private final UserJpaEntity user;
         private final Map<UUID, String> nicknamesByUser = new LinkedHashMap<>();
+        // Totais de cada pessoa somada nesta linha (titular + vinculados).
+        private final List<BalanceTotals> parts = new ArrayList<>();
         private BigDecimal consumed = BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
         private BigDecimal paid = BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
 
@@ -416,13 +431,24 @@ public class MonthlyReportUseCase {
             consumed = consumed.add(totals.consumed).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
             paid = paid.add(totals.paid).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
             nicknamesByUser.putAll(totals.nicknamesByUser);
+            parts.add(totals);
         }
 
         private MonthlyBalanceResponse toResponse() {
             BigDecimal balance = paid.subtract(consumed).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
             String nickname = String.join(" + ", nicknamesByUser.values().stream().sorted().toList());
             String pixKey = user.getPixKey() == null || user.getPixKey().isBlank() ? null : user.getPixKey();
-            return new MonthlyBalanceResponse(user.getId(), nickname, consumed, paid, balance, pixKey);
+            // Titular primeiro, depois os vinculados por nome.
+            List<BalanceMemberResponse> members = parts.stream()
+                    .sorted(Comparator.comparing((BalanceTotals part) -> !part.user.getId().equals(user.getId()))
+                            .thenComparing(part -> part.user.getNickname()))
+                    .map(part -> new BalanceMemberResponse(
+                            part.user.getId(),
+                            part.user.getNickname(),
+                            part.paid.subtract(part.consumed).setScale(MONEY_SCALE, RoundingMode.HALF_UP),
+                            part.hasActivity()))
+                    .toList();
+            return new MonthlyBalanceResponse(user.getId(), nickname, consumed, paid, balance, pixKey, members);
         }
 
         private BalanceResult toResult() {
