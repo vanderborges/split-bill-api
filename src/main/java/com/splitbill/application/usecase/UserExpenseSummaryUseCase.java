@@ -63,7 +63,11 @@ public class UserExpenseSummaryUseCase {
             UUID eventId,
             UUID requesterId
     ) {
-        if (!groupMembers.existsByGroupIdAndUserIdAndActiveTrue(groupId, requesterId)) {
+        // Quem saiu/foi removido continua lendo o proprio extrato, se tem
+        // despesa no grupo (so leitura, so os dados dele).
+        if (!groupMembers.existsByGroupIdAndUserIdAndActiveTrue(groupId, requesterId)
+                && (groupMembers.findByGroupIdAndUserId(groupId, requesterId).isEmpty()
+                || expenses.findInvolvedEventStatuses(groupId, requesterId).isEmpty())) {
             throw new DomainException("O usuário não faz parte deste grupo.");
         }
         // Temporario: o extrato fica restrito ao proprio evento.

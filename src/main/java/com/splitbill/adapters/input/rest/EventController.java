@@ -43,9 +43,10 @@ public class EventController {
 
     @GetMapping
     public List<EventResponse> list(
-            @RequestParam(required = false) UUID groupId
+            @RequestParam(required = false) UUID groupId,
+            @RequestParam(defaultValue = "false") boolean includeRemoved
     ) {
-        return events.list(currentUser.id(), groupId);
+        return events.list(currentUser.id(), groupId, includeRemoved);
     }
 
     @PostMapping

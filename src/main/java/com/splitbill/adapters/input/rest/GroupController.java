@@ -43,8 +43,8 @@ public class GroupController {
     }
 
     @GetMapping
-    public List<GroupResponse> list() {
-        return groups.listByUser(currentUser.id());
+    public List<GroupResponse> list(@RequestParam(defaultValue = "false") boolean includeRemoved) {
+        return groups.listByUser(currentUser.id(), includeRemoved);
     }
 
     @PostMapping
@@ -82,9 +82,10 @@ public class GroupController {
     @GetMapping("/{groupId}/members")
     public List<GroupMemberResponse> listMembers(
             @PathVariable UUID groupId,
-            @RequestParam(required = false) UUID eventId
+            @RequestParam(required = false) UUID eventId,
+            @RequestParam(defaultValue = "false") boolean includeRemoved
     ) {
-        return groups.listMembers(groupId, currentUser.id(), eventId);
+        return groups.listMembers(groupId, currentUser.id(), eventId, includeRemoved);
     }
 
     @GetMapping("/{groupId}/members/temporary")
@@ -99,6 +100,12 @@ public class GroupController {
             @Valid @RequestBody AssignTemporaryEventRequest request
     ) {
         return groups.assignTemporaryEvent(groupId, userId, request.eventId(), currentUser.id());
+    }
+
+    /** Admin: integrante fixo vira temporario do grupo. */
+    @PutMapping("/{groupId}/members/{userId}/temporary")
+    public GroupMemberResponse makeTemporary(@PathVariable UUID groupId, @PathVariable UUID userId) {
+        return groups.makeTemporary(groupId, userId, currentUser.id());
     }
 
     @PutMapping("/{groupId}/members/{userId}/promote")

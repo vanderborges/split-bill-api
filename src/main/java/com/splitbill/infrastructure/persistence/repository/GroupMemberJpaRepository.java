@@ -14,6 +14,8 @@ public interface GroupMemberJpaRepository extends JpaRepository<GroupMemberJpaEn
 
     List<GroupMemberJpaEntity> findByGroupIdAndActiveTrue(UUID groupId);
 
+    List<GroupMemberJpaEntity> findByGroupId(UUID groupId);
+
     Optional<GroupMemberJpaEntity> findByGroupIdAndUserId(UUID groupId, UUID userId);
 
     List<GroupMemberJpaEntity> findByUserId(UUID userId);

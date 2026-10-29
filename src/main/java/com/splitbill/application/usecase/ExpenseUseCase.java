@@ -57,6 +57,7 @@ public class ExpenseUseCase {
     private final GroupMemberJpaRepository groupMembers;
     private final EntityManager entityManager;
     private final InstallmentRolloverService rollover;
+    private final GroupUseCase groupRules;
     private final ExpenseSplitCalculator splitCalculator = new ExpenseSplitCalculator();
 
     public ExpenseUseCase(
@@ -68,7 +69,8 @@ public class ExpenseUseCase {
             GroupJpaRepository groups,
             GroupMemberJpaRepository groupMembers,
             EntityManager entityManager,
-            InstallmentRolloverService rollover
+            InstallmentRolloverService rollover,
+            GroupUseCase groupRules
     ) {
         this.expenses = expenses;
         this.users = users;
@@ -79,6 +81,7 @@ public class ExpenseUseCase {
         this.groupMembers = groupMembers;
         this.entityManager = entityManager;
         this.rollover = rollover;
+        this.groupRules = groupRules;
     }
 
     @Transactional(readOnly = true)
@@ -411,13 +414,16 @@ public class ExpenseUseCase {
         }
     }
 
-    // Integrante ativo do grupo e, se for temporario, so no proprio evento.
+    // Integrante ATIVO do grupo (quem saiu so le o Extrato, nao as despesas)
+    // e, se for temporario, so nos eventos que ele enxerga
+    // (GroupUseCase#canSeeEvent: abertos e os em que tem despesa).
     private void requireEventAccess(EventJpaEntity event, UUID userId) {
         GroupMemberJpaEntity member = groupMembers.findByGroupIdAndUserId(event.getGroup().getId(), userId)
                 .filter(GroupMemberJpaEntity::isActive)
                 .orElseThrow(() -> new DomainException("O usuário não faz parte deste grupo."));
-        if (!member.participatesIn(event.getId())) {
-            throw new DomainException("Convidados temporários só acessam o próprio evento.");
+        if (member.isTemporary()
+                && !groupRules.canSeeEvent(member, event, groupRules.involvedEventIds(userId))) {
+            throw new DomainException("Convidados temporários só acessam os eventos de que participam.");
         }
     }
 

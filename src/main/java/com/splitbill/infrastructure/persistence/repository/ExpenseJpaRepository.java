@@ -102,4 +102,21 @@ public interface ExpenseJpaRepository extends JpaRepository<ExpenseJpaEntity, UU
             @Param("groupId") UUID groupId,
             @Param("userId") UUID userId
     );
+
+    /**
+     * Eventos (nao apagados) em que a pessoa tem despesa, pagando ou
+     * consumindo - o que ela continua enxergando depois de sair do grupo
+     * (e o que o temporario enxerga alem dos eventos abertos).
+     */
+    @Query("""
+            select distinct event.id
+            from ExpenseJpaEntity expense
+            join expense.event event
+            left join expense.payers payer
+            left join expense.participants participant
+            where expense.deletedAt is null
+              and event.deletedAt is null
+              and (expense.payer.id = :userId or payer.user.id = :userId or participant.user.id = :userId)
+            """)
+    List<UUID> findInvolvedEventIds(@Param("userId") UUID userId);
 }

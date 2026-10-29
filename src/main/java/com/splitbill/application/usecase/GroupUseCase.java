@@ -50,14 +50,61 @@ public class GroupUseCase {
 
     @Transactional(readOnly = true)
     public List<GroupResponse> listByUser(UUID viewerUserId) {
+        return listByUser(viewerUserId, false);
+    }
+
+    /**
+     * {@code includeRemoved} (Extrato): tambem os grupos de onde a pessoa
+     * saiu/foi removida mas em que tem despesa em algum evento - vem com
+     * {@code viewerRemoved = true} e da acesso so de leitura.
+     */
+    @Transactional(readOnly = true)
+    public List<GroupResponse> listByUser(UUID viewerUserId, boolean includeRemoved) {
         if (viewerUserId == null) {
             return groups.findByActiveTrue().stream().map(this::toResponse).toList();
         }
-        return members.findByUserIdAndActiveTrue(viewerUserId).stream()
+        List<GroupResponse> result = new ArrayList<>(members.findByUserIdAndActiveTrue(viewerUserId).stream()
                 .map(GroupMemberJpaEntity::getGroup)
                 .filter(GroupJpaEntity::isActive)
                 .map(this::toResponse)
-                .toList();
+                .toList());
+        if (includeRemoved) {
+            members.findByUserId(viewerUserId).stream()
+                    .filter(member -> !member.isActive())
+                    .filter(member -> member.getGroup().isActive())
+                    .filter(member -> !expenses.findInvolvedEventStatuses(
+                            member.getGroup().getId(), viewerUserId).isEmpty())
+                    .map(member -> toResponse(member.getGroup(), true))
+                    .forEach(result::add);
+        }
+        return result;
+    }
+
+    /**
+     * Quem pode VER o evento (relatorio, saldo, pagamentos, Extrato):
+     * integrante fixo ativo sempre; temporario de um evento, o proprio
+     * evento; temporario do grupo, eventos abertos e os em que tem despesa;
+     * quem saiu/foi removido, so os eventos em que tem despesa (leitura).
+     */
+    public boolean canSeeEvent(GroupMemberJpaEntity member, EventJpaEntity event, Set<UUID> involvedEventIds) {
+        if (member == null) {
+            return false;
+        }
+        boolean involved = involvedEventIds.contains(event.getId());
+        if (!member.isActive()) {
+            return involved;
+        }
+        if (!member.isTemporary()) {
+            return true;
+        }
+        if (!member.isGroupTemporary()) {
+            return member.participatesIn(event.getId()) || involved;
+        }
+        return event.getStatus() == EventStatus.OPEN || involved;
+    }
+
+    public Set<UUID> involvedEventIds(UUID userId) {
+        return new java.util.HashSet<>(expenses.findInvolvedEventIds(userId));
     }
 
     @Transactional
@@ -163,6 +210,17 @@ public class GroupUseCase {
      */
     @Transactional(readOnly = true)
     public List<GroupMemberResponse> listMembers(UUID groupId, UUID viewerUserId, UUID eventId) {
+        return listMembers(groupId, viewerUserId, eventId, false);
+    }
+
+    /**
+     * {@code includeRemoved} (filtros, ex.: pessoa do Extrato geral): no fim,
+     * quem saiu/foi removido mas tem despesa em algum evento do grupo, com
+     * {@code active = false}.
+     */
+    @Transactional(readOnly = true)
+    public List<GroupMemberResponse> listMembers(
+            UUID groupId, UUID viewerUserId, UUID eventId, boolean includeRemoved) {
         requireMembership(groupId, viewerUserId);
         UUID scopeEventId = eventId;
         if (viewerUserId != null) {
@@ -180,6 +238,18 @@ public class GroupUseCase {
                 .toList());
         if (filterEventId != null) {
             listed.addAll(removedMembersWithExpensesIn(groupId, filterEventId, listed));
+        } else if (includeRemoved) {
+            Set<UUID> listedUserIds = listed.stream()
+                    .map(GroupMemberResponse::userId)
+                    .collect(Collectors.toSet());
+            members.findByGroupId(groupId).stream()
+                    .filter(member -> !member.isActive())
+                    .filter(member -> !listedUserIds.contains(member.getUser().getId()))
+                    .filter(member -> member.getUser().getDeletedAt() == null)
+                    .filter(member -> !expenses.findInvolvedEventStatuses(
+                            groupId, member.getUser().getId()).isEmpty())
+                    .map(this::toMemberResponse)
+                    .forEach(listed::add);
         }
         return listed;
     }
@@ -238,6 +308,56 @@ public class GroupUseCase {
         List<EventStatus> statuses = expenses.findInvolvedEventStatuses(
                 member.getGroup().getId(), member.getUser().getId());
         return statuses.isEmpty() || statuses.stream().anyMatch(status -> status != EventStatus.CLOSED);
+    }
+
+    /**
+     * Admin: integrante fixo (ou admin) vira temporario do grupo - continua
+     * nos eventos abertos e sai do grupo quando o ultimo evento em que tem
+     * despesa for concluido ({@link #releaseFinishedTemporaries}).
+     */
+    @Transactional
+    public GroupMemberResponse makeTemporary(UUID groupId, UUID userId, UUID requesterId) {
+        requireAdmin(groupId, requesterId);
+        GroupMemberJpaEntity member = members.findByGroupIdAndUserId(groupId, userId)
+                .filter(GroupMemberJpaEntity::isActive)
+                .orElseThrow(() -> new DomainException("Integrante do grupo não encontrado."));
+        if (member.isTemporary()) {
+            throw new DomainException("Essa pessoa já é temporária no grupo.");
+        }
+        if (member.getRole() == GroupMemberRole.ADMIN
+                && members.countByGroupIdAndRoleAndActiveTrue(groupId, GroupMemberRole.ADMIN) <= 1) {
+            throw new DomainException("O grupo precisa ter ao menos um administrador.");
+        }
+        member.setRole(GroupMemberRole.MEMBER);
+        member.setTemporary(true);
+        member.setTemporaryEvent(null);
+        member.setUpdatedAt(LocalDateTime.now());
+        return toMemberResponse(member);
+    }
+
+    /**
+     * Depois de concluir um evento: temporario que tinha despesa e agora so
+     * tem despesa em eventos fechados sai do grupo (fica como removido, com
+     * leitura do Extrato desses eventos). Temporario sem despesa nenhuma
+     * continua (ainda pode ser incluido em algo).
+     */
+    @Transactional
+    public void releaseFinishedTemporaries(UUID groupId) {
+        LocalDateTime now = LocalDateTime.now();
+        for (GroupMemberJpaEntity member : members.findByGroupIdAndActiveTrue(groupId)) {
+            if (!member.isTemporary()) {
+                continue;
+            }
+            List<EventStatus> statuses = expenses.findInvolvedEventStatuses(groupId, member.getUser().getId());
+            boolean finished = member.isGroupTemporary()
+                    ? !statuses.isEmpty() && statuses.stream().allMatch(status -> status == EventStatus.CLOSED)
+                    : !isTemporaryEventOpen(member)
+                            && statuses.stream().allMatch(status -> status == EventStatus.CLOSED);
+            if (finished) {
+                member.setActive(false);
+                member.setUpdatedAt(now);
+            }
+        }
     }
 
     /** Admin: o temporario passa a ser integrante fixo do grupo. */
@@ -301,10 +421,13 @@ public class GroupUseCase {
             return;
         }
         GroupMemberJpaEntity member = members.findByGroupIdAndUserId(event.getGroup().getId(), userId)
-                .filter(GroupMemberJpaEntity::isActive)
                 .orElseThrow(() -> new DomainException("O usuário não faz parte deste grupo."));
-        if (!member.participatesIn(event.getId())) {
-            throw new DomainException("Convidados temporários só acessam o próprio evento.");
+        // Leitura (relatorio, saldo, pagamentos): ver canSeeEvent - quem saiu
+        // do grupo continua vendo os eventos em que tem despesa.
+        if (!canSeeEvent(member, event, involvedEventIds(userId))) {
+            throw new DomainException(member.isActive()
+                    ? "Convidados temporários só acessam os eventos de que participam."
+                    : "O usuário não faz parte deste grupo.");
         }
     }
 
@@ -386,6 +509,17 @@ public class GroupUseCase {
         }
     }
 
+    /** Integrante ativo e fixo (admin ou integrante), não temporário. */
+    public void requireFixedMember(UUID groupId, UUID userId) {
+        boolean fixed = userId != null && members.findByGroupIdAndUserId(groupId, userId)
+                .filter(GroupMemberJpaEntity::isActive)
+                .filter(member -> !member.isTemporary())
+                .isPresent();
+        if (!fixed) {
+            throw new DomainException("Apenas integrantes do grupo podem convidar.");
+        }
+    }
+
     public void requireAdmin(UUID groupId, UUID userId) {
         if (userId == null || !members.existsByGroupIdAndUserIdAndRoleAndActiveTrue(groupId, userId, GroupMemberRole.ADMIN)) {
             throw new DomainException("Apenas administradores do grupo podem fazer isso.");
@@ -441,6 +575,10 @@ public class GroupUseCase {
     }
 
     private GroupResponse toResponse(GroupJpaEntity group) {
+        return toResponse(group, false);
+    }
+
+    private GroupResponse toResponse(GroupJpaEntity group, boolean viewerRemoved) {
         return new GroupResponse(
                 group.getId(),
                 group.getName(),
@@ -449,7 +587,8 @@ public class GroupUseCase {
                 group.isActive(),
                 group.getReceiver() == null ? null : group.getReceiver().getId(),
                 group.getReceiver() == null ? null : group.getReceiver().getNickname(),
-                group.getAutoSettlementDay()
+                group.getAutoSettlementDay(),
+                viewerRemoved
         );
     }
 

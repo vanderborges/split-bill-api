@@ -82,19 +82,35 @@ public class EventUseCase {
     }
 
     // Temporario so enxerga o evento ao qual esta amarrado.
-    private boolean visibleTo(EventJpaEntity event, Map<UUID, GroupMemberJpaEntity> viewerMembership) {
+    private boolean visibleTo(EventJpaEntity event, Map<UUID, GroupMemberJpaEntity> viewerMembership,
+                              Set<UUID> involvedEventIds) {
         GroupMemberJpaEntity member = viewerMembership.get(event.getGroup().getId());
-        return member == null || member.participatesIn(event.getId());
+        return member == null || groupRules.canSeeEvent(member, event, involvedEventIds);
     }
 
     @Transactional(readOnly = true)
     public List<EventResponse> list(UUID viewerUserId, UUID groupId) {
+        return list(viewerUserId, groupId, false);
+    }
+
+    /**
+     * {@code includeRemoved} (Extrato): tambem os eventos com despesa da
+     * pessoa nos grupos de onde ela saiu/foi removida (so leitura).
+     */
+    @Transactional(readOnly = true)
+    public List<EventResponse> list(UUID viewerUserId, UUID groupId, boolean includeRemoved) {
         List<EventJpaEntity> source;
         if (groupId != null) {
-            groupRules.requireMembership(groupId, viewerUserId);
+            boolean removedHere = includeRemoved && viewerUserId != null
+                    && groupMembers.findByGroupIdAndUserId(groupId, viewerUserId)
+                    .map(member -> !member.isActive()).orElse(false);
+            if (!removedHere) {
+                groupRules.requireMembership(groupId, viewerUserId);
+            }
             source = events.findByGroupIdAndDeletedAtIsNull(groupId);
         } else if (viewerUserId != null) {
-            List<UUID> groupIds = groupMembers.findByUserIdAndActiveTrue(viewerUserId).stream()
+            List<UUID> groupIds = groupMembers.findByUserId(viewerUserId).stream()
+                    .filter(member -> includeRemoved || member.isActive())
                     .map(GroupMemberJpaEntity::getGroup)
                     .map(GroupJpaEntity::getId)
                     .toList();
@@ -111,8 +127,11 @@ public class EventUseCase {
             groupMembers.findByUserId(viewerUserId)
                     .forEach(member -> viewerMembership.put(member.getGroup().getId(), member));
         }
+        Set<UUID> involvedEventIds = viewerUserId == null
+                ? Set.of()
+                : groupRules.involvedEventIds(viewerUserId);
         return source.stream()
-                .filter(event -> visibleTo(event, viewerMembership))
+                .filter(event -> visibleTo(event, viewerMembership, involvedEventIds))
                 .sorted(Comparator.comparing(EventJpaEntity::getCreatedAt))
                 .map(this::toResponse)
                 .toList();
@@ -382,6 +401,9 @@ public class EventUseCase {
             event.getMonth().setStatus(MonthStatus.CLOSED);
             event.getMonth().setClosedAt(event.getClosedAt());
         }
+        // Temporario cujo ultimo evento com despesa acabou de fechar sai do
+        // grupo (continua lendo o Extrato desses eventos).
+        groupRules.releaseFinishedTemporaries(event.getGroup().getId());
         return toResponse(event);
     }
 

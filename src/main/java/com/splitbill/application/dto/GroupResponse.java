@@ -10,6 +10,9 @@ public record GroupResponse(
         boolean active,
         UUID receiverUserId,
         String receiverNickname,
-        Integer autoSettlementDay
+        Integer autoSettlementDay,
+        // Quem esta vendo saiu/foi removido do grupo: so le o Extrato dos
+        // eventos em que tem despesa.
+        boolean viewerRemoved
 ) {
 }

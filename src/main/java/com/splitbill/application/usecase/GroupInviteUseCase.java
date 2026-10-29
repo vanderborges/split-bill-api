@@ -59,7 +59,8 @@ public class GroupInviteUseCase {
 
     @Transactional
     public GroupInviteResponse getOrCreate(UUID groupId, UUID requesterId) {
-        groupRules.requireAdmin(groupId, requesterId);
+        // Link do grupo: admin e integrantes fixos (temporario nao convida).
+        groupRules.requireFixedMember(groupId, requesterId);
         GroupJpaEntity group = activeGroup(groupId);
         GroupInviteJpaEntity invite = invites.findFirstByGroupIdAndEventIsNullAndActiveTrueOrderByCreatedAtDesc(groupId)
                 .orElseGet(() -> createInvite(group, requesterId, null));
@@ -162,6 +163,9 @@ public class GroupInviteUseCase {
             return toMemberResponse(member);
         }
 
+        // Quem saiu/foi removido e volta pelo convite entra como temporario
+        // normal (o admin pode tornar fixo depois).
+        boolean returning = member != null;
         if (member == null) {
             member = new GroupMemberJpaEntity();
             member.setId(UUID.randomUUID());
@@ -171,7 +175,7 @@ public class GroupInviteUseCase {
         }
         member.setRole(GroupMemberRole.MEMBER);
         member.setActive(true);
-        member.setTemporary(temporaryEvent != null);
+        member.setTemporary(temporaryEvent != null || returning);
         member.setTemporaryEvent(temporaryEvent);
         member.setUpdatedAt(now);
         GroupMemberResponse joined = toMemberResponse(members.save(member));
@@ -205,7 +209,7 @@ public class GroupInviteUseCase {
             }
         }
         if (placeholderName != null && !placeholderName.equals(newUserName)) {
-            message.append(" no lugar de \"").append(placeholderName).append("\" (sem cadastro)");
+            message.append(" no lugar de \"").append(placeholderName).append("\"");
         }
         message.append(".");
         String text = message.length() > 500 ? message.substring(0, 500) : message.toString();
