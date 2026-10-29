@@ -346,6 +346,16 @@ public class EventUseCase {
      */
     @Transactional
     public EventResponse close(UUID id, UUID requesterId) {
+        return close(id, requesterId, false);
+    }
+
+    /**
+     * {@code markAllPaid}: botão "Concluir evento" - o admin confirma e os
+     * pagamentos que faltavam (pendentes ou informados) viram pagos antes
+     * de fechar.
+     */
+    @Transactional
+    public EventResponse close(UUID id, UUID requesterId, boolean markAllPaid) {
         EventJpaEntity event = events.findById(id)
                 .orElseThrow(() -> new DomainException("Evento não encontrado."));
         groupRules.requireAdmin(event.getGroup().getId(), requesterId);
@@ -354,6 +364,9 @@ public class EventUseCase {
         }
         if (event.getStatus() != EventStatus.SETTLING) {
             throw new DomainException("Abra o evento para pagamento antes de fechar.");
+        }
+        if (markAllPaid) {
+            settlements.markAllPaid(id, requesterId);
         }
         boolean hasPendingPayment = settlements.listByEvent(id, requesterId).stream()
                 .anyMatch(settlement -> settlement.status() == SettlementStatus.PENDING

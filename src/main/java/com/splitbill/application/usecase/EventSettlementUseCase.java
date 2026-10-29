@@ -107,7 +107,7 @@ public class EventSettlementUseCase {
         // Pagamento so se confirma com o evento aguardando pagamento: aberto
         // ainda pode receber despesa (o saldo muda) e fechado ja foi acertado.
         if (settlement.getEvent().getStatus() != EventStatus.SETTLING) {
-            throw new DomainException("Só é possível alterar pagamentos com o evento aguardando pagamento.");
+            throw new DomainException("Só é possível alterar pagamentos com o evento aguardando pagamentos.");
         }
         UserJpaEntity admin = users.findById(requesterId)
                 .orElseThrow(() -> new DomainException("Administrador não encontrado."));
@@ -135,6 +135,27 @@ public class EventSettlementUseCase {
                     linked.setUpdatedAt(now);
                 });
         return toResponse(settlement);
+    }
+
+    /**
+     * "Concluir evento" com pagamento em aberto: o admin confirma o
+     * fechamento e todos os acertos que faltavam (pendentes ou informados)
+     * ficam pagos.
+     */
+    @Transactional
+    public void markAllPaid(UUID eventId, UUID requesterId) {
+        // Garante as linhas de todo mundo antes de marcar.
+        listByEvent(eventId, requesterId);
+        UserJpaEntity admin = users.findById(requesterId)
+                .orElseThrow(() -> new DomainException("Administrador não encontrado."));
+        LocalDateTime now = LocalDateTime.now();
+        settlements.findByEventId(eventId).stream()
+                .filter(settlement -> normalizeStatus(settlement.getStatus()) != SettlementStatus.PAID)
+                .forEach(settlement -> {
+                    settlement.setStatus(SettlementStatus.PAID);
+                    settlement.setUpdatedByAdmin(admin);
+                    settlement.setUpdatedAt(now);
+                });
     }
 
     /**

@@ -37,6 +37,8 @@ import java.util.UUID;
 public class NotificationUseCase {
 
     private static final Locale PT_BR = Locale.of("pt", "BR");
+    // Sol no início da cobrança; cada sistema desenha o próprio emoji.
+    private static final String BILLING_PREFIX = "☀️ ";
 
     private final NotificationJpaRepository notifications;
     private final EventJpaRepository events;
@@ -166,7 +168,8 @@ public class NotificationUseCase {
             notification.setId(UUID.randomUUID());
             notification.setRecipient(recipient);
             notification.setEvent(event);
-            notification.setMessage(billingMessage.text());
+            String text = BILLING_PREFIX + billingMessage.text();
+            notification.setMessage(text.length() > 500 ? text.substring(0, 500) : text);
             notification.setPixKey(billingMessage.pixKey());
             notification.setReceiverName(billingMessage.receiverName());
             notification.setCreatedBy(actingAs);
@@ -340,7 +343,7 @@ public class NotificationUseCase {
 
     private EventSettlementResponse payerSettlement(EventJpaEntity event, UUID requesterId) {
         if (event.getStatus() != EventStatus.SETTLING) {
-            throw new DomainException("O pagamento só pode ser feito com o evento aguardando pagamento.");
+            throw new DomainException("O pagamento só pode ser feito com o evento aguardando pagamentos.");
         }
         UserJpaEntity requester = users.findById(requesterId)
                 .orElseThrow(() -> new DomainException("Usuário não encontrado."));

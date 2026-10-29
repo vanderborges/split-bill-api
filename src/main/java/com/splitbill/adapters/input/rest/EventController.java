@@ -63,8 +63,11 @@ public class EventController {
     }
 
     @PutMapping("/{id}/close")
-    public EventResponse close(@PathVariable UUID id) {
-        return events.close(id, currentUser.id());
+    public EventResponse close(
+            @PathVariable UUID id,
+            @RequestParam(defaultValue = "false") boolean markAllPaid
+    ) {
+        return events.close(id, currentUser.id(), markAllPaid);
     }
 
     @PutMapping("/{id}/reopen")
