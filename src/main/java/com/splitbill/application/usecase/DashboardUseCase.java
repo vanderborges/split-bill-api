@@ -15,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -108,11 +109,35 @@ public class DashboardUseCase {
                         group.getId(),
                         group.getName(),
                         eventBalancesByGroupId.getOrDefault(group.getId(), List.of()).stream()
-                                .sorted(Comparator.comparing(eventBalance -> eventBalance.event.getCreatedAt()))
+                                .sorted(Comparator.comparing((EventBalance eventBalance) -> eventBalance.event, EVENT_ORDER))
                                 .map(EventBalance::toResponse)
                                 .toList()
                 ))
                 .toList();
+    }
+
+    /**
+     * Ordem da Home: primeiro os aguardando pagamento (precisam de ação),
+     * depois os abertos; dentro de cada status, do mais recente pro mais
+     * antigo (mês/ano do mensal, data de criação do avulso).
+     */
+    private static final Comparator<EventJpaEntity> EVENT_ORDER = Comparator
+            .comparingInt(DashboardUseCase::statusRank)
+            .thenComparing(DashboardUseCase::sortDate, Comparator.reverseOrder());
+
+    private static int statusRank(EventJpaEntity event) {
+        return switch (event.getStatus()) {
+            case SETTLING -> 0;
+            case OPEN -> 1;
+            default -> 2;
+        };
+    }
+
+    private static LocalDateTime sortDate(EventJpaEntity event) {
+        if (event.getMonth() != null) {
+            return LocalDateTime.of(event.getMonth().getYear(), event.getMonth().getMonth(), 1, 0, 0);
+        }
+        return event.getCreatedAt() == null ? LocalDateTime.MIN : event.getCreatedAt();
     }
 
     private static final class EventBalance {
