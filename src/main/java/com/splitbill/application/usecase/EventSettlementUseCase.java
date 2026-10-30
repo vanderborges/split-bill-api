@@ -61,6 +61,7 @@ public class EventSettlementUseCase {
         List<EventSettlementJpaEntity> eventSettlements = new ArrayList<>(settlements.findByEventId(eventId));
         Map<UUID, EventSettlementJpaEntity> byUser = new HashMap<>();
         eventSettlements.forEach(settlement -> byUser.put(settlement.getUser().getId(), settlement));
+        UUID receiverRootId = settlementReceiverRootId(event);
 
         for (MonthlyReportUseCase.BalanceResult balance : reports.calculateBalances(eventId)) {
             EventSettlementJpaEntity existing = byUser.get(balance.userId());
@@ -79,6 +80,11 @@ public class EventSettlementUseCase {
             SettlementStatus status = existing == null && event.getStatus() == EventStatus.CLOSED
                     ? SettlementStatus.PAID
                     : defaultStatus(amount, previousAmount, previousStatus);
+            // Quem recebe os pagamentos do evento (escolhido no "Fechar evento")
+            // nao paga ninguem: ja fica como pago.
+            if (balance.userId().equals(receiverRootId)) {
+                status = SettlementStatus.PAID;
+            }
             // So grava quando algo mudou: abrir o relatorio fazia um UPDATE
             // por pessoa toda vez, so por causa do updatedAt.
             boolean changed = settlement.getRole() != role
@@ -113,6 +119,9 @@ public class EventSettlementUseCase {
                 .orElseThrow(() -> new DomainException("Administrador não encontrado."));
 
         SettlementStatus status = normalizeStatus(request.status());
+        if (reports.billingRootId(settlement.getUser()).equals(settlementReceiverRootId(settlement.getEvent()))) {
+            throw new DomainException("Quem recebe os pagamentos do evento já fica como pago.");
+        }
         // "Pagamento informado" so quem deve marca (botao Pagar); o admin
         // confirma (PAID) ou devolve pra pendente.
         if (status != SettlementStatus.PAID && status != SettlementStatus.PENDING) {
@@ -182,6 +191,17 @@ public class EventSettlementUseCase {
             settlement.setStatus(rootStatus);
             settlement.setUpdatedAt(now);
         }
+    }
+
+    /**
+     * Titular (cobranca vinculada) de quem recebe os pagamentos do evento -
+     * so depois do "Fechar evento"; aberto ainda nao tem recebedor.
+     */
+    private UUID settlementReceiverRootId(EventJpaEntity event) {
+        if (event.getStatus() == EventStatus.OPEN || event.getReceiver() == null) {
+            return null;
+        }
+        return reports.billingRootId(event.getReceiver());
     }
 
     private EventSettlementJpaEntity createSettlement(EventJpaEntity event, UUID userId, LocalDateTime now) {
