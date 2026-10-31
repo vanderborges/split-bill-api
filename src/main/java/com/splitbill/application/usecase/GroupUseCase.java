@@ -279,10 +279,14 @@ public class GroupUseCase {
                 .toList();
     }
 
-    /** Admin: todos os temporarios do grupo (inclusive os de eventos ja fechados, ocultos nas listas). */
+    /**
+     * Temporarios do grupo (secao "Temporarios" da tela do grupo). Desde
+     * 31/10/2026 qualquer integrante ve (os temporarios sairam da lista de
+     * Integrantes); so o admin altera.
+     */
     @Transactional(readOnly = true)
     public List<GroupMemberResponse> listTemporaryMembers(UUID groupId, UUID requesterId) {
-        requireAdmin(groupId, requesterId);
+        requireMembership(groupId, requesterId);
         return members.findByGroupIdAndActiveTrue(groupId).stream()
                 .filter(GroupMemberJpaEntity::isTemporary)
                 // Sai da lista quando os eventos dele fecham: o do grupo,
