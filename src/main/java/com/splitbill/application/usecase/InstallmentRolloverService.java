@@ -216,8 +216,12 @@ public class InstallmentRolloverService {
 
     /** Evento mensal (nao apagado) do grupo imediatamente antes de {@code event}. */
     public Optional<EventJpaEntity> previousMonthlyEvent(EventJpaEntity event) {
-        YearMonth reference = referenceOf(event);
-        return monthlyEventsOf(event.getGroup().getId()).stream()
+        return previousMonthlyEvent(event.getGroup().getId(), referenceOf(event));
+    }
+
+    /** Evento mensal (nao apagado) do grupo imediatamente antes de {@code reference}. */
+    public Optional<EventJpaEntity> previousMonthlyEvent(UUID groupId, YearMonth reference) {
+        return monthlyEventsOf(groupId).stream()
                 .filter(candidate -> referenceOf(candidate).isBefore(reference))
                 .max(Comparator.comparing(InstallmentRolloverService::referenceOf));
     }

@@ -2,6 +2,7 @@ package com.splitbill.application.usecase;
 
 import com.splitbill.application.dto.CreateEventRequest;
 import com.splitbill.application.dto.EventResponse;
+import com.splitbill.application.dto.PendingInstallmentResponse;
 import com.splitbill.application.dto.StartSettlementRequest;
 import com.splitbill.domain.exception.DomainException;
 import com.splitbill.domain.valueobject.EventStatus;
@@ -180,8 +181,54 @@ public class EventUseCase {
         events.save(event);
         if (event.getType() == EventType.MONTHLY) {
             bringInstallmentsFromPreviousMonth(event);
+            continueChosenInstallments(event, request.continueInstallmentGroupIds());
         }
         return toResponse(event);
+    }
+
+    /**
+     * Parcelas/assinaturas que nao entram sozinhas no mes novo: o app pergunta
+     * quais seguem antes de criar o evento mensal.
+     */
+    @Transactional(readOnly = true)
+    public List<PendingInstallmentResponse> pendingInstallments(UUID groupId, int month, int year, UUID requesterId) {
+        groupRules.requireAdmin(groupId, requesterId);
+        if (month < 1 || month > 12 || year < 2000) {
+            throw new DomainException("O evento mensal precisa ter mês e ano válidos.");
+        }
+        return interruptedSeries(groupId, YearMonth.of(year, month)).stream()
+                .map(expense -> new PendingInstallmentResponse(
+                        expense.getInstallmentGroup().getId(),
+                        expense.getInstallmentGroup().getDescription(),
+                        expense.getInstallmentGroup().getTotalAmount(),
+                        rollover.pendingNextNumber(expense).orElseThrow(),
+                        expense.getTotalInstallments(),
+                        expense.getInstallmentGroup().isSubscription()))
+                .toList();
+    }
+
+    /**
+     * Com o mes anterior ainda OPEN as parcelas entram sozinhas
+     * ({@link #bringInstallmentsFromPreviousMonth}). Depois dele sair de OPEN,
+     * so sobra a proxima parcela sem lugar quando o mes seguinte foi apagado.
+     */
+    private List<ExpenseJpaEntity> interruptedSeries(UUID groupId, YearMonth reference) {
+        return rollover.previousMonthlyEvent(groupId, reference)
+                .filter(previous -> previous.getStatus() != EventStatus.OPEN)
+                .map(previous -> expenses.findByEventIdAndDeletedAtIsNull(previous.getId()).stream()
+                        .filter(expense -> rollover.pendingNextNumber(expense).isPresent())
+                        .toList())
+                .orElse(List.of());
+    }
+
+    private void continueChosenInstallments(EventJpaEntity event, List<UUID> chosenGroupIds) {
+        if (chosenGroupIds == null || chosenGroupIds.isEmpty()) {
+            return;
+        }
+        interruptedSeries(event.getGroup().getId(), referenceOf(event)).stream()
+                .filter(expense -> chosenGroupIds.contains(expense.getInstallmentGroup().getId()))
+                .forEach(expense -> rollover.pendingNextNumber(expense).ifPresent(next ->
+                        rollover.propagateForward(rollover.createNext(expense, event, next))));
     }
 
     /**

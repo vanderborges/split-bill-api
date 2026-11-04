@@ -2,6 +2,7 @@ package com.splitbill.adapters.input.rest;
 
 import com.splitbill.application.dto.CreateEventRequest;
 import com.splitbill.application.dto.EventResponse;
+import com.splitbill.application.dto.PendingInstallmentResponse;
 import com.splitbill.application.dto.StartSettlementRequest;
 import com.splitbill.application.usecase.EventUseCase;
 import com.splitbill.application.usecase.NotificationUseCase;
@@ -47,6 +48,15 @@ public class EventController {
             @RequestParam(defaultValue = "false") boolean includeRemoved
     ) {
         return events.list(currentUser.id(), groupId, includeRemoved);
+    }
+
+    @GetMapping("/pending-installments")
+    public List<PendingInstallmentResponse> pendingInstallments(
+            @RequestParam UUID groupId,
+            @RequestParam int month,
+            @RequestParam int year
+    ) {
+        return events.pendingInstallments(groupId, month, year, currentUser.id());
     }
 
     @PostMapping

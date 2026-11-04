@@ -153,7 +153,20 @@ public class ExpenseUseCase {
         validateOpen(event);
         expense.setEvent(event);
         expense.setMonth(month);
-        fillExpense(expense, request, request.description(), request.amount(), expense.getInstallmentNumber(), expense.getTotalInstallments());
+        Integer installmentNumber = expense.getInstallmentNumber();
+        Integer totalInstallments = expense.getTotalInstallments();
+        boolean subscription = Boolean.TRUE.equals(request.subscription());
+        if (subscription || (request.installments() != null && request.installments() > 1)) {
+            // Despesa comum vira a 1a parcela da serie; serie ja criada nao muda.
+            if (expense.getInstallmentGroup() != null) {
+                throw new DomainException("A repetição desta despesa não pode ser alterada.");
+            }
+            validateMonthlyInstallmentEvent(event);
+            expense.setInstallmentGroup(newInstallmentGroup(request, event, month, subscription));
+            installmentNumber = 1;
+            totalInstallments = subscription ? null : request.installments();
+        }
+        fillExpense(expense, request, request.description(), request.amount(), installmentNumber, totalInstallments);
         expense.setUpdatedAt(LocalDateTime.now());
         if (expense.getInstallmentGroup() != null) {
             // Parcelas seguintes ja colocadas nos meses abertos sao refeitas
@@ -214,30 +227,11 @@ public class ExpenseUseCase {
             MonthJpaEntity firstMonth,
             UUID requesterId
     ) {
-        if (firstMonth == null) {
-            throw new DomainException("O parcelamento precisa começar em um evento mensal.");
-        }
-        List<ExpensePayerRequest> payerRequests = normalizePayers(request);
-        if (payerRequests.size() != 1) {
-            throw new DomainException("O parcelamento permite apenas um pagador.");
-        }
-        UserJpaEntity payer = users.findById(payerRequests.get(0).userId())
-                .orElseThrow(() -> new DomainException("Pagador não encontrado."));
+        InstallmentGroupJpaEntity group = newInstallmentGroup(request, firstEvent, firstMonth, false);
         UserJpaEntity creator = users.findById(requesterId)
                 .orElseThrow(() -> new DomainException("Usuário não encontrado."));
 
         LocalDateTime now = LocalDateTime.now();
-        InstallmentGroupJpaEntity group = new InstallmentGroupJpaEntity();
-        group.setId(UUID.randomUUID());
-        group.setDescription(request.description());
-        group.setTotalAmount(request.amount().setScale(2, RoundingMode.HALF_UP));
-        group.setTotalInstallments(request.installments());
-        group.setFirstEvent(firstEvent);
-        group.setPayer(payer);
-        group.setCategory(request.category());
-        group.setCreatedAt(now);
-        installmentGroups.save(group);
-
         ExpenseJpaEntity expense = new ExpenseJpaEntity();
         expense.setId(UUID.randomUUID());
         expense.setMonth(firstMonth);
@@ -267,31 +261,11 @@ public class ExpenseUseCase {
             MonthJpaEntity firstMonth,
             UUID requesterId
     ) {
-        if (firstMonth == null) {
-            throw new DomainException("A assinatura deve começar a partir de um evento mensal.");
-        }
-        List<ExpensePayerRequest> payerRequests = normalizePayers(request);
-        if (payerRequests.size() != 1) {
-            throw new DomainException("A assinatura permite apenas um pagador.");
-        }
-        UserJpaEntity payer = users.findById(payerRequests.get(0).userId())
-                .orElseThrow(() -> new DomainException("Pagador não encontrado."));
+        InstallmentGroupJpaEntity group = newInstallmentGroup(request, firstEvent, firstMonth, true);
         UserJpaEntity creator = users.findById(requesterId)
                 .orElseThrow(() -> new DomainException("Usuário não encontrado."));
 
         LocalDateTime now = LocalDateTime.now();
-        InstallmentGroupJpaEntity group = new InstallmentGroupJpaEntity();
-        group.setId(UUID.randomUUID());
-        group.setDescription(request.description());
-        group.setTotalAmount(request.amount().setScale(2, RoundingMode.HALF_UP));
-        group.setTotalInstallments(null);
-        group.setSubscription(true);
-        group.setFirstEvent(firstEvent);
-        group.setPayer(payer);
-        group.setCategory(request.category());
-        group.setCreatedAt(now);
-        installmentGroups.save(group);
-
         ExpenseJpaEntity expense = new ExpenseJpaEntity();
         expense.setId(UUID.randomUUID());
         expense.setMonth(firstMonth);
@@ -307,6 +281,39 @@ public class ExpenseUseCase {
         ExpenseJpaEntity saved = expenses.save(expense);
         rollover.propagateForward(saved);
         return toResponse(saved);
+    }
+
+    private InstallmentGroupJpaEntity newInstallmentGroup(
+            CreateExpenseRequest request,
+            EventJpaEntity firstEvent,
+            MonthJpaEntity firstMonth,
+            boolean subscription
+    ) {
+        if (firstMonth == null) {
+            throw new DomainException(subscription
+                    ? "A assinatura deve começar a partir de um evento mensal."
+                    : "O parcelamento precisa começar em um evento mensal.");
+        }
+        List<ExpensePayerRequest> payerRequests = normalizePayers(request);
+        if (payerRequests.size() != 1) {
+            throw new DomainException(subscription
+                    ? "A assinatura permite apenas um pagador."
+                    : "O parcelamento permite apenas um pagador.");
+        }
+        UserJpaEntity payer = users.findById(payerRequests.get(0).userId())
+                .orElseThrow(() -> new DomainException("Pagador não encontrado."));
+
+        InstallmentGroupJpaEntity group = new InstallmentGroupJpaEntity();
+        group.setId(UUID.randomUUID());
+        group.setDescription(request.description());
+        group.setTotalAmount(request.amount().setScale(2, RoundingMode.HALF_UP));
+        group.setTotalInstallments(subscription ? null : request.installments());
+        group.setSubscription(subscription);
+        group.setFirstEvent(firstEvent);
+        group.setPayer(payer);
+        group.setCategory(request.category());
+        group.setCreatedAt(LocalDateTime.now());
+        return installmentGroups.save(group);
     }
 
     private void validateMonthlyInstallmentEvent(EventJpaEntity event) {
