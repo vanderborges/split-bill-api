@@ -156,7 +156,7 @@ public class EventUseCase {
             throw new DomainException("O evento mensal precisa ter mês e ano.");
         }
         if (request.type() == EventType.MONTHLY) {
-            if (events.findByMonthIdAndTypeAndGroupId(month.getId(), EventType.MONTHLY, group.getId()).isPresent()) {
+            if (events.findByMonthIdAndTypeAndGroupIdAndDeletedAtIsNull(month.getId(), EventType.MONTHLY, group.getId()).isPresent()) {
                 throw new DomainException("Já existe um evento mensal "
                         + String.format("%02d/%d", month.getMonth(), month.getYear()) + " neste grupo.");
             }
@@ -507,7 +507,7 @@ public class EventUseCase {
 
     @Transactional
     public EventJpaEntity ensureMonthlyEvent(MonthJpaEntity month, GroupJpaEntity group) {
-        return events.findByMonthIdAndTypeAndGroupId(month.getId(), EventType.MONTHLY, group.getId())
+        return events.findByMonthIdAndTypeAndGroupIdAndDeletedAtIsNull(month.getId(), EventType.MONTHLY, group.getId())
                 .orElseGet(() -> {
                     EventJpaEntity event = new EventJpaEntity();
                     event.setId(UUID.randomUUID());

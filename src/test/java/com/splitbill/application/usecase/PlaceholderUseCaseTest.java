@@ -1,5 +1,7 @@
 package com.splitbill.application.usecase;
 
+import com.splitbill.application.dto.CreatePlaceholderRequest;
+import com.splitbill.domain.exception.DomainException;
 import com.splitbill.infrastructure.persistence.entity.EventJpaEntity;
 import com.splitbill.infrastructure.persistence.entity.GroupInviteJpaEntity;
 import com.splitbill.infrastructure.persistence.entity.GroupJpaEntity;
@@ -12,20 +14,29 @@ import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class PlaceholderUseCaseTest {
 
     private final GroupMemberJpaRepository members = mock(GroupMemberJpaRepository.class);
+    private final UserJpaRepository users = mock(UserJpaRepository.class);
+    private final GroupJpaRepository groups = mock(GroupJpaRepository.class);
+    private final GroupUseCase groupRules = mock(GroupUseCase.class);
     private final PlaceholderUseCase useCase = new PlaceholderUseCase(
-            mock(UserJpaRepository.class),
-            mock(GroupJpaRepository.class),
+            users,
+            groups,
             members,
-            mock(GroupUseCase.class),
+            groupRules,
             mock(EntityManager.class)
     );
 
@@ -58,6 +69,31 @@ class PlaceholderUseCaseTest {
         List<GroupMemberJpaEntity> claimable = useCase.claimableFor(invite(event));
 
         assertThat(claimable).containsExactly(beto, zeca);
+    }
+
+    @Test
+    void anyMemberCanCreateTemporaryPlaceholder() {
+        UUID requester = UUID.randomUUID();
+        when(groups.findById(group.getId())).thenReturn(Optional.of(group));
+        when(members.save(any())).thenAnswer(call -> call.getArgument(0));
+
+        useCase.create(group.getId(), new CreatePlaceholderRequest("Beto", null, true), requester);
+
+        verify(groupRules).requireMembership(group.getId(), requester);
+        verify(groupRules, never()).requireAdmin(any(), any());
+    }
+
+    @Test
+    void onlyAdminCanCreateFixedPlaceholder() {
+        UUID requester = UUID.randomUUID();
+        doThrow(new DomainException("Apenas administradores do grupo podem fazer isso."))
+                .when(groupRules).requireAdmin(group.getId(), requester);
+        CreatePlaceholderRequest fixed = new CreatePlaceholderRequest("Beto", null, null);
+
+        assertThatThrownBy(() -> useCase.create(group.getId(), fixed, requester))
+                .isInstanceOf(DomainException.class);
+
+        verify(users, never()).save(any());
     }
 
     private GroupMemberJpaEntity member(String nickname, boolean placeholder, EventJpaEntity temporaryEvent) {

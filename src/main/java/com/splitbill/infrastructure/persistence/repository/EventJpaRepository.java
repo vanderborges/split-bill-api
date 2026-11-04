@@ -12,7 +12,7 @@ public interface EventJpaRepository extends JpaRepository<EventJpaEntity, UUID> 
 
     Optional<EventJpaEntity> findFirstByMonthIdAndTypeOrderByCreatedAtAsc(UUID monthId, EventType type);
 
-    Optional<EventJpaEntity> findByMonthIdAndTypeAndGroupId(UUID monthId, EventType type, UUID groupId);
+    Optional<EventJpaEntity> findByMonthIdAndTypeAndGroupIdAndDeletedAtIsNull(UUID monthId, EventType type, UUID groupId);
 
     List<EventJpaEntity> findByGroupIdAndDeletedAtIsNull(UUID groupId);
 

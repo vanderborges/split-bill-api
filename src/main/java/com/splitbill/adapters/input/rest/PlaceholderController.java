@@ -20,7 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 import java.util.UUID;
 
-/** Pessoas sem cadastro do grupo (so admin) - ver {@link PlaceholderUseCase}. */
+/** Pessoas sem cadastro do grupo - ver {@link PlaceholderUseCase}. */
 @RestController
 @RequestMapping("/groups/{groupId}/placeholders")
 public class PlaceholderController {

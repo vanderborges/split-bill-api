@@ -469,7 +469,7 @@ public class ExpenseUseCase {
     }
 
     private EventJpaEntity findOrCreateMonthlyEvent(MonthJpaEntity month, GroupJpaEntity group, LocalDateTime now) {
-        return events.findByMonthIdAndTypeAndGroupId(month.getId(), EventType.MONTHLY, group.getId())
+        return events.findByMonthIdAndTypeAndGroupIdAndDeletedAtIsNull(month.getId(), EventType.MONTHLY, group.getId())
                 .orElseGet(() -> {
                     EventJpaEntity event = new EventJpaEntity();
                     event.setId(UUID.randomUUID());

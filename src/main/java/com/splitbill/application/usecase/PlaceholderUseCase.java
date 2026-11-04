@@ -55,7 +55,13 @@ public class PlaceholderUseCase {
 
     @Transactional
     public GroupMemberResponse create(UUID groupId, CreatePlaceholderRequest request, UUID requesterId) {
-        groupRules.requireAdmin(groupId, requesterId);
+        // Temporario: qualquer integrante cadastra. Fixo: so o admin (o app
+        // antigo ainda cria fixo, sem evento e sem o campo temporary).
+        if (request.eventId() != null || Boolean.TRUE.equals(request.temporary())) {
+            groupRules.requireMembership(groupId, requesterId);
+        } else {
+            groupRules.requireAdmin(groupId, requesterId);
+        }
         GroupJpaEntity group = groups.findById(groupId)
                 .filter(GroupJpaEntity::isActive)
                 .orElseThrow(() -> new DomainException("Grupo não encontrado."));

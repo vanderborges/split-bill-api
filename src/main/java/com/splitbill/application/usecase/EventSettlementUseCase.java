@@ -23,7 +23,9 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class EventSettlementUseCase {
@@ -62,8 +64,9 @@ public class EventSettlementUseCase {
         Map<UUID, EventSettlementJpaEntity> byUser = new HashMap<>();
         eventSettlements.forEach(settlement -> byUser.put(settlement.getUser().getId(), settlement));
         UUID receiverRootId = settlementReceiverRootId(event);
+        List<MonthlyReportUseCase.BalanceResult> balances = reports.calculateBalances(eventId);
 
-        for (MonthlyReportUseCase.BalanceResult balance : reports.calculateBalances(eventId)) {
+        for (MonthlyReportUseCase.BalanceResult balance : balances) {
             EventSettlementJpaEntity existing = byUser.get(balance.userId());
             EventSettlementJpaEntity settlement = existing;
             if (settlement == null) {
@@ -96,6 +99,9 @@ public class EventSettlementUseCase {
                 settlement.setStatus(status);
                 settlement.setUpdatedAt(now);
             }
+        }
+        if (event.getStatus() != EventStatus.CLOSED) {
+            clearSettlementsWithoutBalance(eventSettlements, balances, now);
         }
         syncLinkedSettlements(eventSettlements, now);
 
@@ -165,6 +171,38 @@ public class EventSettlementUseCase {
                     settlement.setUpdatedByAdmin(admin);
                     settlement.setUpdatedAt(now);
                 });
+    }
+
+    /**
+     * Quem saiu de todas as despesas do evento nao vem mais no saldo, mas a
+     * linha antiga continuava com o valor e o status de antes: invisivel no
+     * relatorio, recebendo cobranca e travando o fechamento automatico. Zera
+     * a linha; se a pessoa voltar a ter despesa, ela volta como pendente
+     * ({@link #defaultStatus}).
+     */
+    private void clearSettlementsWithoutBalance(
+            List<EventSettlementJpaEntity> eventSettlements,
+            List<MonthlyReportUseCase.BalanceResult> balances,
+            LocalDateTime now
+    ) {
+        Set<UUID> rootsWithBalance = balances.stream()
+                .map(MonthlyReportUseCase.BalanceResult::userId)
+                .collect(Collectors.toSet());
+        BigDecimal zero = BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+        for (EventSettlementJpaEntity settlement : eventSettlements) {
+            if (rootsWithBalance.contains(reports.billingRootId(settlement.getUser()))) {
+                continue;
+            }
+            boolean changed = settlement.getRole() != SettlementRole.NEUTRAL
+                    || settlement.getAmount() == null || settlement.getAmount().compareTo(zero) != 0
+                    || settlement.getStatus() != SettlementStatus.PAID;
+            if (changed) {
+                settlement.setRole(SettlementRole.NEUTRAL);
+                settlement.setAmount(zero);
+                settlement.setStatus(SettlementStatus.PAID);
+                settlement.setUpdatedAt(now);
+            }
+        }
     }
 
     /**

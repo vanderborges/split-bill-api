@@ -80,7 +80,7 @@ public class MonthUseCase {
                     return months.save(created);
                 });
 
-        events.findByMonthIdAndTypeAndGroupId(month.getId(), EventType.MONTHLY, group.getId())
+        events.findByMonthIdAndTypeAndGroupIdAndDeletedAtIsNull(month.getId(), EventType.MONTHLY, group.getId())
                 .ifPresentOrElse(
                         existing -> { },
                         () -> createMonthlyEvent(month, group, now)
@@ -144,7 +144,7 @@ public class MonthUseCase {
     }
 
     private MonthResponse toResponse(MonthJpaEntity month, UUID groupId) {
-        UUID eventId = events.findByMonthIdAndTypeAndGroupId(month.getId(), EventType.MONTHLY, groupId)
+        UUID eventId = events.findByMonthIdAndTypeAndGroupIdAndDeletedAtIsNull(month.getId(), EventType.MONTHLY, groupId)
                 .map(EventJpaEntity::getId)
                 .orElse(null);
         return new MonthResponse(
