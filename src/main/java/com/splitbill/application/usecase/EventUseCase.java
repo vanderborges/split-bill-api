@@ -505,21 +505,23 @@ public class EventUseCase {
         YearMonth sourceReference = YearMonth.of(
                 sourceEvent.getMonth().getYear(), sourceEvent.getMonth().getMonth());
 
-        Optional<EventJpaEntity> existingLater = events
-                .findByGroupIdAndDeletedAtIsNull(sourceEvent.getGroup().getId()).stream()
-                .filter(candidate -> candidate.getType() == EventType.MONTHLY)
-                .filter(candidate -> candidate.getMonth() != null)
-                .filter(candidate -> candidate.getStatus() != EventStatus.CLOSED)
-                .filter(candidate -> !candidate.getId().equals(sourceEvent.getId()))
-                .filter(candidate -> YearMonth.of(candidate.getMonth().getYear(), candidate.getMonth().getMonth())
-                        .isAfter(sourceReference))
-                .min(Comparator.comparing(candidate ->
-                        YearMonth.of(candidate.getMonth().getYear(), candidate.getMonth().getMonth())));
-        if (existingLater.isPresent()) {
-            return existingLater.get();
+        List<EventJpaEntity> laterEvents = monthlyEventsOf(sourceEvent.getGroup().getId()).stream()
+                .filter(candidate -> referenceOf(candidate).isAfter(sourceReference))
+                .toList();
+        Optional<EventJpaEntity> nearestOpen = laterEvents.stream()
+                .filter(candidate -> candidate.getStatus() == EventStatus.OPEN)
+                .min(Comparator.comparing(EventUseCase::referenceOf));
+        if (nearestOpen.isPresent()) {
+            return nearestOpen.get();
         }
 
-        YearMonth nextReference = sourceReference.plusMonths(1);
+        // Parcela nunca tomba para mes em pagamento ou fechado: sem mes aberto
+        // depois deste, cria o seguinte ao ultimo mes existente.
+        YearMonth nextReference = laterEvents.stream()
+                .map(EventUseCase::referenceOf)
+                .max(Comparator.naturalOrder())
+                .orElse(sourceReference)
+                .plusMonths(1);
         MonthJpaEntity month = findOrCreateMonth(nextReference.getMonthValue(), nextReference.getYear());
         return ensureMonthlyEvent(month, sourceEvent.getGroup());
     }

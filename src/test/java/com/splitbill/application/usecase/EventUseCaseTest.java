@@ -17,6 +17,7 @@ import com.splitbill.infrastructure.persistence.repository.MonthJpaRepository;
 import com.splitbill.infrastructure.persistence.repository.UserJpaRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.math.BigDecimal;
 import java.time.YearMonth;
@@ -125,6 +126,61 @@ class EventUseCaseTest {
 
         verify(events).save(any());
         verify(rollover, never()).createNext(any(), any(), any(Integer.class));
+    }
+
+    @Test
+    void rolloverSkipsMonthInSettlementAndCreatesTheNextOne() {
+        assertThat(rolloverTargetWithDecemberIn(EventStatus.SETTLING).getMonth().getYear()).isEqualTo(2027);
+    }
+
+    @Test
+    void rolloverSkipsClosedMonthAndCreatesTheNextOne() {
+        EventJpaEntity target = rolloverTargetWithDecemberIn(EventStatus.CLOSED);
+
+        assertThat(target.getMonth().getMonth()).isEqualTo(1);
+        assertThat(target.getStatus()).isEqualTo(EventStatus.OPEN);
+    }
+
+    @Test
+    void rolloverUsesNearestOpenMonth() {
+        EventJpaEntity target = rolloverTargetWithDecemberIn(EventStatus.OPEN);
+
+        assertThat(target.getMonth().getMonth()).isEqualTo(12);
+        verify(events, never()).save(any());
+    }
+
+    private EventJpaEntity rolloverTargetWithDecemberIn(EventStatus decemberStatus) {
+        november.setStatus(EventStatus.OPEN);
+        november.setType(EventType.MONTHLY);
+        november.setGroup(group);
+        november.setMonth(month(11, 2026));
+
+        EventJpaEntity december = new EventJpaEntity();
+        december.setId(UUID.randomUUID());
+        december.setType(EventType.MONTHLY);
+        december.setStatus(decemberStatus);
+        december.setGroup(group);
+        december.setMonth(month(12, 2026));
+
+        when(events.findById(november.getId())).thenReturn(Optional.of(november));
+        when(events.findByGroupIdAndDeletedAtIsNull(group.getId())).thenReturn(List.of(november, december));
+        when(months.findByMonthAndYear(1, 2027)).thenReturn(Optional.of(month(1, 2027)));
+        when(events.save(any())).thenAnswer(call -> call.getArgument(0));
+        when(expenses.findByEventIdAndDeletedAtIsNull(november.getId())).thenReturn(List.of(course));
+
+        useCase.startSettlement(november.getId(), null, UUID.randomUUID());
+
+        ArgumentCaptor<EventJpaEntity> target = ArgumentCaptor.forClass(EventJpaEntity.class);
+        verify(rollover).createNext(eq(course), target.capture(), eq(2));
+        return target.getValue();
+    }
+
+    private static MonthJpaEntity month(int number, int year) {
+        MonthJpaEntity month = new MonthJpaEntity();
+        month.setId(UUID.randomUUID());
+        month.setMonth(number);
+        month.setYear(year);
+        return month;
     }
 
     private CreateEventRequest request(List<UUID> continueIds) {

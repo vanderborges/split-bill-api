@@ -78,8 +78,9 @@ public class InstallmentRolloverService {
      * descricao do grupo de parcelas).
      */
     public ExpenseJpaEntity createNext(ExpenseJpaEntity template, EventJpaEntity targetEvent, int installmentNumber) {
-        if (targetEvent.getStatus() == EventStatus.CLOSED) {
-            throw new DomainException("Não é possível criar a próxima parcela em um evento mensal fechado.");
+        // Regra unica de destino: parcela so tomba para evento aberto.
+        if (targetEvent.getStatus() != EventStatus.OPEN || targetEvent.getDeletedAt() != null) {
+            throw new DomainException("A próxima parcela só pode entrar em um evento mensal aberto.");
         }
         InstallmentGroupJpaEntity installmentGroup = template.getInstallmentGroup();
         BigDecimal amount = installmentGroup.getTotalAmount();
@@ -242,9 +243,12 @@ public class InstallmentRolloverService {
         return current.getTotalInstallments() != null && next <= current.getTotalInstallments();
     }
 
+    // Parcela de evento apagado nao conta como existente: senao a serie para
+    // de tombar por causa de uma parcela que ninguem enxerga.
     private Map<Integer, ExpenseJpaEntity> activeByNumber(UUID installmentGroupId) {
         return expenses.findByInstallmentGroupIdAndDeletedAtIsNull(installmentGroupId).stream()
                 .filter(expense -> expense.getInstallmentNumber() != null)
+                .filter(expense -> expense.getEvent() == null || expense.getEvent().getDeletedAt() == null)
                 .collect(Collectors.toMap(ExpenseJpaEntity::getInstallmentNumber, Function.identity(),
                         (first, ignored) -> first));
     }
