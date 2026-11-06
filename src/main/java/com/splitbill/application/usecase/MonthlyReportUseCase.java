@@ -220,9 +220,34 @@ public class MonthlyReportUseCase {
                 .toList();
     }
 
+    /** Relatorio e saldos do evento calculados uma vez (Extrato usa os dois). */
+    public record EventReport(MonthlyReportResponse report, List<BalanceResult> balances) {
+    }
+
+    /**
+     * Sem checar acesso nem abrir transacao: quem chama ja fez os dois. Mesmo
+     * resultado de {@link #getByEvent} + {@link #calculateBalances}, lendo as
+     * despesas uma vez so.
+     */
+    public EventReport reportWithBalances(EventJpaEntity event) {
+        List<ExpenseJpaEntity> eventExpenses = expenses.findByEventIdAndDeletedAtIsNull(event.getId());
+        Map<UUID, BalanceTotals> totalsByUser = calculateTotals(event, eventExpenses);
+        List<BalanceResult> balances = totalsByUser.values().stream()
+                .filter(BalanceTotals::hasActivity)
+                .map(BalanceTotals::toResult)
+                .toList();
+        return new EventReport(buildReport(event, event.getMonth(), eventExpenses, totalsByUser), balances);
+    }
+
     private MonthlyReportResponse buildReport(EventJpaEntity event, MonthJpaEntity month) {
-        Map<UUID, BalanceTotals> totalsByUser = calculateTotals(event.getId());
-        BigDecimal totalExpenses = expenses.findByEventIdAndDeletedAtIsNull(event.getId()).stream()
+        List<ExpenseJpaEntity> eventExpenses = expenses.findByEventIdAndDeletedAtIsNull(event.getId());
+        return buildReport(event, month, eventExpenses, calculateTotals(event, eventExpenses));
+    }
+
+    private MonthlyReportResponse buildReport(EventJpaEntity event, MonthJpaEntity month,
+                                              List<ExpenseJpaEntity> eventExpenses,
+                                              Map<UUID, BalanceTotals> totalsByUser) {
+        BigDecimal totalExpenses = eventExpenses.stream()
                 .map(ExpenseJpaEntity::getAmount)
                 .reduce(BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP), BigDecimal::add)
                 .setScale(MONEY_SCALE, RoundingMode.HALF_UP);
@@ -253,7 +278,13 @@ public class MonthlyReportUseCase {
     }
 
     private Map<UUID, BalanceTotals> calculateTotals(UUID eventId) {
-        Map<UUID, BalanceTotals> rawTotalsByUser = calculateRawTotals(eventId);
+        EventJpaEntity event = events.findById(eventId)
+                .orElseThrow(() -> new DomainException("Evento não encontrado."));
+        return calculateTotals(event, expenses.findByEventIdAndDeletedAtIsNull(eventId));
+    }
+
+    private Map<UUID, BalanceTotals> calculateTotals(EventJpaEntity event, List<ExpenseJpaEntity> eventExpenses) {
+        Map<UUID, BalanceTotals> rawTotalsByUser = calculateRawTotals(event, eventExpenses);
         Map<UUID, BalanceTotals> totalsByBillingUser = new LinkedHashMap<>();
 
         rawTotalsByUser.values().forEach(total -> {
@@ -265,9 +296,8 @@ public class MonthlyReportUseCase {
         return totalsByBillingUser;
     }
 
-    private Map<UUID, BalanceTotals> calculateRawTotals(UUID eventId) {
-        EventJpaEntity event = events.findById(eventId)
-                .orElseThrow(() -> new DomainException("Evento não encontrado."));
+    private Map<UUID, BalanceTotals> calculateRawTotals(EventJpaEntity event, List<ExpenseJpaEntity> eventExpenses) {
+        UUID eventId = event.getId();
         Map<UUID, BalanceTotals> totalsByUser = new LinkedHashMap<>();
         groupMembers.findByGroupIdAndActiveTrue(event.getGroup().getId()).stream()
                 // Temporario de outro evento nao entra (nem com saldo zerado);
@@ -277,7 +307,7 @@ public class MonthlyReportUseCase {
                 .filter(user -> user.getDeletedAt() == null)
                 .forEach(user -> totalsByUser.put(user.getId(), new BalanceTotals(user)));
 
-        for (ExpenseJpaEntity expense : expenses.findByEventIdAndDeletedAtIsNull(eventId)) {
+        for (ExpenseJpaEntity expense : eventExpenses) {
             expense.getParticipants().forEach(participant ->
                     totalsByUser.computeIfAbsent(participant.getUser().getId(), ignored -> new BalanceTotals(participant.getUser()))
                             .addConsumed(participant.getShareAmount()));

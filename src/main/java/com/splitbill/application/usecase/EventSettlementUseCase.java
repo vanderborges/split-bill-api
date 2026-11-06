@@ -57,14 +57,23 @@ public class EventSettlementUseCase {
         EventJpaEntity event = events.findById(eventId)
                 .orElseThrow(() -> new DomainException("Evento não encontrado."));
         groupRules.requireEventAccess(event, requesterId);
+        return syncWithBalances(event, reports.calculateBalances(eventId));
+    }
+
+    /**
+     * Acertos de {@code event} a partir dos saldos ja calculados. Nao checa
+     * acesso nem abre transacao: quem chama ja fez os dois (o Extrato calcula
+     * o saldo uma vez so e usa no relatorio e aqui).
+     */
+    public List<EventSettlementResponse> syncWithBalances(
+            EventJpaEntity event, List<MonthlyReportUseCase.BalanceResult> balances) {
         LocalDateTime now = LocalDateTime.now();
 
         // Uma consulta so pras linhas do evento (antes era uma por pessoa).
-        List<EventSettlementJpaEntity> eventSettlements = new ArrayList<>(settlements.findByEventId(eventId));
+        List<EventSettlementJpaEntity> eventSettlements = new ArrayList<>(settlements.findByEventId(event.getId()));
         Map<UUID, EventSettlementJpaEntity> byUser = new HashMap<>();
         eventSettlements.forEach(settlement -> byUser.put(settlement.getUser().getId(), settlement));
         UUID receiverRootId = settlementReceiverRootId(event);
-        List<MonthlyReportUseCase.BalanceResult> balances = reports.calculateBalances(eventId);
 
         for (MonthlyReportUseCase.BalanceResult balance : balances) {
             EventSettlementJpaEntity existing = byUser.get(balance.userId());
