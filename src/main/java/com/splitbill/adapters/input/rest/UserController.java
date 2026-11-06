@@ -79,6 +79,13 @@ public class UserController {
         return users.update(id, request, currentUserId(), isAdmin());
     }
 
+    /** "Excluir conta" do Perfil: a propria pessoa, admin ou nao. */
+    @DeleteMapping("/me")
+    public ResponseEntity<Void> deleteOwnAccount() {
+        users.deleteOwnAccount(currentUserId());
+        return ResponseEntity.noContent().build();
+    }
+
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         users.delete(id, isAdmin());

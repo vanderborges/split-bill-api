@@ -9,7 +9,9 @@ import com.splitbill.domain.exception.DomainException;
 import com.splitbill.domain.valueobject.EventStatus;
 import com.splitbill.infrastructure.persistence.entity.GroupMemberJpaEntity;
 import com.splitbill.infrastructure.persistence.entity.UserJpaEntity;
+import com.splitbill.infrastructure.persistence.repository.DeviceTokenJpaRepository;
 import com.splitbill.infrastructure.persistence.repository.ExpenseJpaRepository;
+import com.splitbill.infrastructure.persistence.repository.NotificationJpaRepository;
 import com.splitbill.infrastructure.persistence.repository.GroupMemberJpaRepository;
 import com.splitbill.infrastructure.persistence.repository.UserJpaRepository;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -27,17 +29,23 @@ public class UserUseCase {
     private final ExpenseJpaRepository expenses;
     private final GroupMemberJpaRepository groupMembers;
     private final PasswordEncoder passwordEncoder;
+    private final DeviceTokenJpaRepository deviceTokens;
+    private final NotificationJpaRepository notifications;
 
     public UserUseCase(
             UserJpaRepository users,
             ExpenseJpaRepository expenses,
             GroupMemberJpaRepository groupMembers,
-            PasswordEncoder passwordEncoder
+            PasswordEncoder passwordEncoder,
+            DeviceTokenJpaRepository deviceTokens,
+            NotificationJpaRepository notifications
     ) {
         this.users = users;
         this.expenses = expenses;
         this.groupMembers = groupMembers;
         this.passwordEncoder = passwordEncoder;
+        this.deviceTokens = deviceTokens;
+        this.notifications = notifications;
     }
 
     @Transactional(readOnly = true)
@@ -160,19 +168,52 @@ public class UserUseCase {
         if (user.getDeletedAt() != null) {
             return;
         }
+        requireCanLeave(user, "um usuário que participa");
+        deactivate(user, LocalDateTime.now());
+    }
+
+    /**
+     * "Excluir conta" do Perfil (exigencia da App Store e do Google Play):
+     * qualquer pessoa exclui a propria conta. Alem de desativar, apaga os
+     * dados pessoais (e-mail, telefone, PIX, senha, aparelhos de push e
+     * avisos). Fica so o apelido, porque as despesas compartilhadas
+     * continuam no historico dos outros integrantes.
+     */
+    @Transactional
+    public void deleteOwnAccount(UUID userId) {
+        UserJpaEntity user = users.findById(userId)
+                .orElseThrow(() -> new DomainException("Usuário não encontrado."));
+        if (user.getDeletedAt() != null) {
+            return;
+        }
+        requireCanLeave(user, "sua conta enquanto você participa");
+        LocalDateTime now = LocalDateTime.now();
+        deactivate(user, now);
+        user.setFullName(user.getNickname());
+        user.setEmail("excluido-" + user.getId() + "@dividiai.invalid");
+        user.setPhone("");
+        user.setPixKey("");
+        user.setPasswordHash(passwordEncoder.encode(UUID.randomUUID().toString()));
+        user.setAdmin(false);
+        deviceTokens.deleteAll(deviceTokens.findByUserId(userId));
+        notifications.deleteByRecipientId(userId);
+    }
+
+    private void requireCanLeave(UserJpaEntity user, String who) {
         if (user.isAdmin() && users.countByAdminTrueAndActiveTrueAndDeletedAtIsNull() <= 1) {
             throw new DomainException("Não é possível excluir o último administrador ativo.");
         }
-        if (expenses.existsByUserInvolvementAndEventStatusNot(id, EventStatus.CLOSED)) {
-            throw new DomainException("Não é possível excluir um usuário que participa de um evento em aberto.");
+        if (expenses.existsByUserInvolvementAndEventStatusNot(user.getId(), EventStatus.CLOSED)) {
+            throw new DomainException("Não é possível excluir " + who + " de um evento em aberto."
+                    + " Conclua ou acerte os eventos antes.");
         }
+    }
 
-        LocalDateTime now = LocalDateTime.now();
+    private void deactivate(UserJpaEntity user, LocalDateTime now) {
         user.setActive(false);
         user.setDeletedAt(now);
         user.setUpdatedAt(now);
-
-        for (GroupMemberJpaEntity membership : groupMembers.findByUserIdAndActiveTrue(id)) {
+        for (GroupMemberJpaEntity membership : groupMembers.findByUserIdAndActiveTrue(user.getId())) {
             membership.setActive(false);
             membership.setUpdatedAt(now);
         }
