@@ -231,7 +231,18 @@ public class MonthlyReportUseCase {
      */
     public EventReport reportWithBalances(EventJpaEntity event) {
         List<ExpenseJpaEntity> eventExpenses = expenses.findByEventIdAndDeletedAtIsNull(event.getId());
-        Map<UUID, BalanceTotals> totalsByUser = calculateTotals(event, eventExpenses);
+        return reportWithBalances(event, eventExpenses,
+                groupMembers.findByGroupIdAndActiveTrue(event.getGroup().getId()));
+    }
+
+    /**
+     * Mesmo calculo com as despesas e os integrantes ja carregados (o Extrato
+     * busca os de todos os eventos de uma vez, em vez de 2 consultas por evento).
+     */
+    public EventReport reportWithBalances(EventJpaEntity event, List<ExpenseJpaEntity> eventExpenses,
+                                          List<GroupMemberJpaEntity> activeMembers) {
+        Map<UUID, BalanceTotals> totalsByUser =
+                mergeByBillingUser(calculateRawTotals(event, eventExpenses, activeMembers));
         List<BalanceResult> balances = totalsByUser.values().stream()
                 .filter(BalanceTotals::hasActivity)
                 .map(BalanceTotals::toResult)
@@ -284,7 +295,10 @@ public class MonthlyReportUseCase {
     }
 
     private Map<UUID, BalanceTotals> calculateTotals(EventJpaEntity event, List<ExpenseJpaEntity> eventExpenses) {
-        Map<UUID, BalanceTotals> rawTotalsByUser = calculateRawTotals(event, eventExpenses);
+        return mergeByBillingUser(calculateRawTotals(event, eventExpenses));
+    }
+
+    private Map<UUID, BalanceTotals> mergeByBillingUser(Map<UUID, BalanceTotals> rawTotalsByUser) {
         Map<UUID, BalanceTotals> totalsByBillingUser = new LinkedHashMap<>();
 
         rawTotalsByUser.values().forEach(total -> {
@@ -297,9 +311,15 @@ public class MonthlyReportUseCase {
     }
 
     private Map<UUID, BalanceTotals> calculateRawTotals(EventJpaEntity event, List<ExpenseJpaEntity> eventExpenses) {
+        return calculateRawTotals(event, eventExpenses,
+                groupMembers.findByGroupIdAndActiveTrue(event.getGroup().getId()));
+    }
+
+    private Map<UUID, BalanceTotals> calculateRawTotals(EventJpaEntity event, List<ExpenseJpaEntity> eventExpenses,
+                                                        List<GroupMemberJpaEntity> activeMembers) {
         UUID eventId = event.getId();
         Map<UUID, BalanceTotals> totalsByUser = new LinkedHashMap<>();
-        groupMembers.findByGroupIdAndActiveTrue(event.getGroup().getId()).stream()
+        activeMembers.stream()
                 // Temporario de outro evento nao entra (nem com saldo zerado);
                 // temporario do grupo so entra pelas despesas dele (abaixo).
                 .filter(member -> member.participatesIn(eventId) && !member.isGroupTemporary())

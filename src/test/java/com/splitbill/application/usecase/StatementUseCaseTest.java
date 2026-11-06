@@ -9,9 +9,10 @@ import com.splitbill.infrastructure.persistence.entity.EventJpaEntity;
 import com.splitbill.infrastructure.persistence.entity.GroupJpaEntity;
 import com.splitbill.infrastructure.persistence.entity.GroupMemberJpaEntity;
 import com.splitbill.infrastructure.persistence.repository.EventJpaRepository;
+import com.splitbill.infrastructure.persistence.repository.EventSettlementJpaRepository;
+import com.splitbill.infrastructure.persistence.repository.ExpenseJpaRepository;
 import com.splitbill.infrastructure.persistence.repository.GroupMemberJpaRepository;
 import org.junit.jupiter.api.Test;
-import org.springframework.transaction.PlatformTransactionManager;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -36,11 +37,13 @@ class StatementUseCaseTest {
     private final EventSettlementUseCase settlements = mock(EventSettlementUseCase.class);
     private final GroupUseCase groupRules = mock(GroupUseCase.class);
     private final GroupMemberJpaRepository groupMembers = mock(GroupMemberJpaRepository.class);
+    private final ExpenseJpaRepository expenseRows = mock(ExpenseJpaRepository.class);
+    private final EventSettlementJpaRepository settlementRows = mock(EventSettlementJpaRepository.class);
     private final StatementUseCase useCase = new StatementUseCase(
-            events, eventRows, reports, settlements, groupRules, groupMembers,
-            mock(PlatformTransactionManager.class));
+            events, eventRows, expenseRows, settlementRows, reports, settlements, groupRules, groupMembers);
 
     private final UUID viewer = UUID.randomUUID();
+    private final List<EventJpaEntity> allEvents = new java.util.ArrayList<>();
 
     @Test
     void loadsEachVisibleEventOnceAndChecksAccessOnce() {
@@ -53,9 +56,9 @@ class StatementUseCaseTest {
         when(groupRules.involvedEventIds(viewer)).thenReturn(Set.of());
         when(groupRules.canSeeEvent(member, visible, Set.of())).thenReturn(true);
         when(groupRules.canSeeEvent(member, hidden, Set.of())).thenReturn(false);
-        when(reports.reportWithBalances(visible))
+        when(reports.reportWithBalances(eq(visible), any(), any()))
                 .thenReturn(new MonthlyReportUseCase.EventReport(null, List.of()));
-        when(settlements.syncWithBalances(eq(visible), any())).thenReturn(List.of());
+        when(settlements.syncWithBalances(eq(visible), any(), any())).thenReturn(List.of());
 
         StatementResponse response = useCase.load(viewer, null);
 
@@ -64,7 +67,7 @@ class StatementUseCaseTest {
         assertThat(response.groupRoles()).containsEntry(group.getId(), "ADMIN");
         // Uma consulta de "eventos com despesa da pessoa" por chamada, nao por evento.
         verify(groupRules, times(1)).involvedEventIds(viewer);
-        verify(reports, never()).reportWithBalances(hidden);
+        verify(reports, never()).reportWithBalances(eq(hidden), any(), any());
         verify(groupRules, never()).requireEventAccess(any(), any());
     }
 
@@ -77,7 +80,7 @@ class StatementUseCaseTest {
         when(groupMembers.findByUserId(viewer)).thenReturn(List.of(removed));
         when(groupRules.involvedEventIds(viewer)).thenReturn(Set.of(event.getId()));
         when(groupRules.canSeeEvent(removed, event, Set.of(event.getId()))).thenReturn(true);
-        when(reports.reportWithBalances(event)).thenReturn(new MonthlyReportUseCase.EventReport(null, List.of()));
+        when(reports.reportWithBalances(eq(event), any(), any())).thenReturn(new MonthlyReportUseCase.EventReport(null, List.of()));
 
         StatementResponse response = useCase.load(viewer, null);
 
@@ -94,7 +97,8 @@ class StatementUseCaseTest {
         event.setStatus(EventStatus.OPEN);
         event.setGroup(group);
         event.setCreatedAt(LocalDateTime.now());
-        when(eventRows.findById(event.getId())).thenReturn(Optional.of(event));
+        allEvents.add(event);
+        when(eventRows.findAllById(any())).thenReturn(allEvents);
         return event;
     }
 

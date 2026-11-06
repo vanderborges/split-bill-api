@@ -67,10 +67,16 @@ public class EventSettlementUseCase {
      */
     public List<EventSettlementResponse> syncWithBalances(
             EventJpaEntity event, List<MonthlyReportUseCase.BalanceResult> balances) {
-        LocalDateTime now = LocalDateTime.now();
-
         // Uma consulta so pras linhas do evento (antes era uma por pessoa).
-        List<EventSettlementJpaEntity> eventSettlements = new ArrayList<>(settlements.findByEventId(event.getId()));
+        return syncWithBalances(event, balances, settlements.findByEventId(event.getId()));
+    }
+
+    /** Com as linhas do evento ja carregadas (o Extrato busca as de todos de uma vez). */
+    public List<EventSettlementResponse> syncWithBalances(
+            EventJpaEntity event, List<MonthlyReportUseCase.BalanceResult> balances,
+            List<EventSettlementJpaEntity> existingRows) {
+        LocalDateTime now = LocalDateTime.now();
+        List<EventSettlementJpaEntity> eventSettlements = new ArrayList<>(existingRows);
         Map<UUID, EventSettlementJpaEntity> byUser = new HashMap<>();
         eventSettlements.forEach(settlement -> byUser.put(settlement.getUser().getId(), settlement));
         UUID receiverRootId = settlementReceiverRootId(event);

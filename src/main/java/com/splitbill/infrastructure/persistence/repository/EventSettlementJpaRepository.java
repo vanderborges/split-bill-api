@@ -5,6 +5,7 @@ import com.splitbill.domain.valueobject.SettlementStatus;
 import com.splitbill.infrastructure.persistence.entity.EventSettlementJpaEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -12,6 +13,8 @@ import java.util.UUID;
 public interface EventSettlementJpaRepository extends JpaRepository<EventSettlementJpaEntity, UUID> {
 
     List<EventSettlementJpaEntity> findByEventId(UUID eventId);
+
+    List<EventSettlementJpaEntity> findByEventIdIn(Collection<UUID> eventIds);
 
     Optional<EventSettlementJpaEntity> findByEventIdAndUserId(UUID eventId, UUID userId);
 

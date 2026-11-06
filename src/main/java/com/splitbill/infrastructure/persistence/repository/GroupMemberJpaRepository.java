@@ -4,6 +4,7 @@ import com.splitbill.domain.valueobject.GroupMemberRole;
 import com.splitbill.infrastructure.persistence.entity.GroupMemberJpaEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -13,6 +14,8 @@ public interface GroupMemberJpaRepository extends JpaRepository<GroupMemberJpaEn
     List<GroupMemberJpaEntity> findByUserIdAndActiveTrue(UUID userId);
 
     List<GroupMemberJpaEntity> findByGroupIdAndActiveTrue(UUID groupId);
+
+    List<GroupMemberJpaEntity> findByGroupIdInAndActiveTrue(Collection<UUID> groupIds);
 
     List<GroupMemberJpaEntity> findByGroupId(UUID groupId);
 
