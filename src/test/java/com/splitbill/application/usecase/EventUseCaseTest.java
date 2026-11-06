@@ -1,6 +1,8 @@
 package com.splitbill.application.usecase;
 
 import com.splitbill.application.dto.CreateEventRequest;
+import com.splitbill.application.dto.EventResponse;
+import com.splitbill.infrastructure.persistence.entity.GroupMemberJpaEntity;
 import com.splitbill.application.dto.PendingInstallmentResponse;
 import com.splitbill.domain.valueobject.EventStatus;
 import com.splitbill.domain.valueobject.EventType;
@@ -42,6 +44,8 @@ class EventUseCaseTest {
     private final ExpenseJpaRepository expenses = mock(ExpenseJpaRepository.class);
     private final GroupJpaRepository groups = mock(GroupJpaRepository.class);
     private final InstallmentRolloverService rollover = mock(InstallmentRolloverService.class);
+    private final GroupMemberJpaRepository groupMembers = mock(GroupMemberJpaRepository.class);
+    private final GroupUseCase groupRules = mock(GroupUseCase.class);
     private final EventUseCase useCase = new EventUseCase(
             events,
             months,
@@ -49,8 +53,8 @@ class EventUseCaseTest {
             mock(UserJpaRepository.class),
             mock(MonthlyReportUseCase.class),
             groups,
-            mock(GroupMemberJpaRepository.class),
-            mock(GroupUseCase.class),
+            groupMembers,
+            groupRules,
             mock(EventSettlementUseCase.class),
             rollover
     );
@@ -181,6 +185,47 @@ class EventUseCaseTest {
         month.setMonth(number);
         month.setYear(year);
         return month;
+    }
+
+    @Test
+    void eventsOfDeletedGroupDoNotAppearInAnyList() {
+        GroupJpaEntity deleted = new GroupJpaEntity();
+        deleted.setId(UUID.randomUUID());
+        deleted.setActive(false);
+        group.setActive(true);
+        EventJpaEntity visible = listed(group, "11/2026");
+        EventJpaEntity hidden = listed(deleted, "10/2026");
+        UUID viewer = UUID.randomUUID();
+        GroupMemberJpaEntity inActive = membership(viewer, group);
+        GroupMemberJpaEntity inDeleted = membership(viewer, deleted);
+        when(groupMembers.findByUserId(viewer)).thenReturn(List.of(inActive, inDeleted));
+        when(events.findByGroupIdInAndDeletedAtIsNull(any())).thenReturn(List.of(visible, hidden));
+        when(events.findByGroupIdAndDeletedAtIsNull(deleted.getId())).thenReturn(List.of(hidden));
+        when(groupRules.canSeeEvent(any(), any(), any())).thenReturn(true);
+
+        assertThat(useCase.list(viewer, null)).extracting(EventResponse::name).containsExactly("11/2026");
+        // Extrato (inclui grupos de onde a pessoa saiu) e filtro pelo grupo excluido.
+        assertThat(useCase.list(viewer, null, true)).extracting(EventResponse::name).containsExactly("11/2026");
+        assertThat(useCase.list(viewer, deleted.getId(), true)).isEmpty();
+    }
+
+    private static EventJpaEntity listed(GroupJpaEntity owner, String name) {
+        EventJpaEntity event = new EventJpaEntity();
+        event.setId(UUID.randomUUID());
+        event.setName(name);
+        event.setType(EventType.MONTHLY);
+        event.setStatus(EventStatus.OPEN);
+        event.setGroup(owner);
+        event.setCreatedAt(java.time.LocalDateTime.now());
+        return event;
+    }
+
+    private static GroupMemberJpaEntity membership(UUID userId, GroupJpaEntity owner) {
+        GroupMemberJpaEntity member = new GroupMemberJpaEntity();
+        member.setGroup(owner);
+        member.setActive(true);
+        member.setRole(com.splitbill.domain.valueobject.GroupMemberRole.MEMBER);
+        return member;
     }
 
     private CreateEventRequest request(List<UUID> continueIds) {

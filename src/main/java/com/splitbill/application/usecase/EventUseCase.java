@@ -132,6 +132,8 @@ public class EventUseCase {
                 ? Set.of()
                 : groupRules.involvedEventIds(viewerUserId);
         return source.stream()
+                // Grupo excluido nao aparece em nenhuma lista (nem no Extrato).
+                .filter(event -> event.getGroup().isActive())
                 .filter(event -> visibleTo(event, viewerMembership, involvedEventIds))
                 .sorted(Comparator.comparing(EventJpaEntity::getCreatedAt))
                 .map(this::toResponse)

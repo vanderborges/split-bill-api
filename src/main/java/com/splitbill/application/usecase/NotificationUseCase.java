@@ -78,14 +78,25 @@ public class NotificationUseCase {
 
     @Transactional(readOnly = true)
     public List<NotificationResponse> list(UUID userId) {
-        return notifications.findByRecipientIdOrderByCreatedAtDesc(userId).stream()
+        return visibleTo(userId).stream()
                 .map(this::toResponse)
                 .toList();
     }
 
     @Transactional(readOnly = true)
     public long unreadCount(UUID userId) {
-        return notifications.countByRecipientIdAndReadAtIsNull(userId);
+        // Mesma lista do sininho: o contador nao conta aviso escondido.
+        return visibleTo(userId).stream()
+                .filter(notification -> notification.getReadAt() == null)
+                .count();
+    }
+
+    // Aviso de evento de grupo excluido some, como o grupo.
+    private List<NotificationJpaEntity> visibleTo(UUID userId) {
+        return notifications.findByRecipientIdOrderByCreatedAtDesc(userId).stream()
+                .filter(notification -> notification.getEvent() == null
+                        || notification.getEvent().getGroup().isActive())
+                .toList();
     }
 
     @Transactional

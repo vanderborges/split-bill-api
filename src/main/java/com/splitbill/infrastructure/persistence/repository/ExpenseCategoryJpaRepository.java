@@ -4,6 +4,7 @@ import com.splitbill.infrastructure.persistence.entity.ExpenseCategoryJpaEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface ExpenseCategoryJpaRepository extends JpaRepository<ExpenseCategoryJpaEntity, UUID> {
@@ -11,4 +12,6 @@ public interface ExpenseCategoryJpaRepository extends JpaRepository<ExpenseCateg
     List<ExpenseCategoryJpaEntity> findByActiveTrueOrderByNameAsc();
 
     boolean existsByNameIgnoreCase(String name);
+
+    Optional<ExpenseCategoryJpaEntity> findFirstByNameIgnoreCase(String name);
 }
